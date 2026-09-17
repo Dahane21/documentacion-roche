@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Roche V2 Web Beta · Tradel</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="loginView" class="screen login-screen">
+    <div class="login-card">
+      <img src="logo_tradel.png" class="login-logo" alt="Tradel Service" />
+      <div class="eyebrow">TRADEL SERVICE</div>
+      <h1>Seguimiento documental Roche</h1>
+      <p class="muted">Versión web compartida conectada a Supabase. Dahane y Lisbet trabajan sobre la misma base.</p>
+      <form id="loginForm" class="web-login-form">
+        <label>Correo</label>
+        <input id="loginEmail" type="email" autocomplete="username" required placeholder="correo@ejemplo.com" />
+        <label>Contraseña</label>
+        <input id="loginPassword" type="password" autocomplete="current-password" required placeholder="••••••••" />
+        <button id="loginSubmit" class="btn primary big" type="submit">INICIAR SESIÓN</button>
+        <div id="loginError" class="login-error hidden"></div>
+      </form>
+      <p class="tiny">Tus credenciales se validan en Supabase. La contraseña no se guarda dentro de esta página.</p>
+    </div>
+  </div>
+
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="side-brand">
+        <img src="logo_tradel.png" alt="Tradel Service" />
+        <div><strong>Roche V2 Web Beta</strong><span>Seguimiento documental</span></div>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-page="quick">⚡ Registro rápido</button>
+        <button class="nav-btn" data-page="pending">Pendientes / Parciales <span id="pendingBadge" class="badge">0</span><span id="partialSidebarBadge" class="badge partial-nav-badge hidden" title="Guías parciales activas">0</span></button>
+        <button class="nav-btn" data-page="ready">Listos para enviar <span id="readyBadge" class="badge">0</span></button>
+        <button class="nav-btn" data-page="general">Reporte general</button>
+        <button class="nav-btn" data-page="history">Historial Roche</button>
+        <button class="nav-btn" data-page="closed">Liquidados</button>
+        <button class="nav-btn" data-page="import">Importar data <span id="reviewBadge" class="badge warn-badge">0</span></button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="tiny muted">Usuario activo</div>
+        <div id="activeUser" class="user-name"></div>
+        <button id="logoutBtn" class="link-btn">Cerrar sesión</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">WEB COMPARTIDA · SUPABASE</div>
+          <h2 id="pageTitle">Registro rápido</h2>
+        </div>
+        <div class="top-actions"><span id="syncStatus" class="sync-status">● Conectando…</span><button id="backupBtn" class="btn small">Exportar respaldo</button><button id="restoreBtn" class="btn small">Restaurar respaldo</button><input id="restoreFile" type="file" accept="application/json,.json" class="hidden"></div>
+      </header>
+
+      <section id="page-quick" class="page">
+        <div class="quick-hero panel">
+          <div>
+            <div class="eyebrow">RUMA DE CARGOS</div>
+            <h3>Buscar la siguiente guía</h3>
+            <p class="muted">Puedes escribir la GR completa o solo sus últimos dígitos, igual que hoy con Ctrl+B.</p>
+          </div>
+          <div class="quick-search-row">
+            <input id="quickSearch" class="quick-search" autocomplete="off" placeholder="Ej. 103999" />
+            <button id="quickSearchBtn" class="btn primary huge">BUSCAR GR</button>
+          </div>
+          <div id="quickResult" class="quick-result hidden"></div>
+        </div>
+        <div class="panel compact-info">
+          <strong>Flujo:</strong> buscar GR → identificar tipo en la guía física → registrar documentos → guardar y continuar con la siguiente.
+        </div>
+      </section>
+
+      <section id="page-pending" class="page hidden">
+        <div class="stats stats-4">
+          <button class="stat stat-filter" data-pending-filter="pending"><span>Pendientes</span><strong id="statPending">0</strong></button>
+          <button class="stat stat-filter" data-pending-filter="partial"><span>Parciales</span><strong id="statPartial">0</strong></button>
+          <button class="stat stat-filter accent-stat" data-pending-filter="decide"><span>Parciales por decidir envío</span><strong id="statDecide">0</strong></button>
+          <button class="stat stat-filter" data-pending-filter="untyped"><span>Sin tipificar</span><strong id="statUntyped">0</strong></button>
+        </div>
+        <button id="partialAlert" class="partial-alert hidden" type="button">
+          <span class="partial-alert-icon">⚠</span>
+          <span><strong><span id="partialAlertCount">0</span> guías parciales requieren revisión</strong><small><span id="partialAlertUnsent">0</span> tienen documentos recibidos pendientes de envío. Haz clic para ver las parciales.</small></span>
+        </button>
+        <div class="panel toolbar">
+          <div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="pendingSearch" placeholder="Buscar…" /></div>
+          <div class="field grow"><label>Destinatario</label><input id="recipientFilter" placeholder="Buscar destinatario…" /></div>
+          <div class="field district-field"><label>Distrito</label><div class="multi-select" id="districtMulti"><button id="districtFilterBtn" class="multi-select-btn" type="button">Todos</button><div id="districtFilterMenu" class="multi-select-menu hidden"><input id="districtFilterSearch" class="multi-select-search" placeholder="Buscar distrito…" autocomplete="off"><div id="districtFilterOptions" class="multi-select-options"></div></div></div></div>
+          <div class="field"><label>Resultado</label><select id="statusFilter"><option value="">Todos</option><option>Pendiente</option><option>Parcial</option></select></div>
+          <div class="field"><label>Docs por enviar</label><select id="unsentFilter"><option value="">Todos</option><option value="yes">Sí</option><option value="no">No</option></select></div>
+          <button id="clearPendingFilters" class="btn">Limpiar</button>
+        </div>
+        <div class="table-wrap panel">
+          <table class="wide-table">
+            <thead><tr><th>Fecha guía</th><th>Distrito</th><th>GRT</th><th>GR cliente</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>Tipo</th><th>Resultado</th><th>Documentación</th><th>Docs por enviar</th><th>Observaciones</th><th>Acciones</th></tr></thead>
+            <tbody id="pendingTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-ready" class="page hidden">
+        <div class="panel ready-head">
+          <div class="field"><label>Fecha de entrega a Roche</label><input id="reportDate" type="date" /></div>
+          <div class="field"><label>Cargo</label><input id="cargoNumber" placeholder="Ej. 300 o N0380" /><small class="field-help">El primero se indica manualmente; los siguientes avanzan en automático.</small></div>
+          <div class="field fixed-value"><label>Para</label><strong>DIEGO</strong></div>
+          <div class="spacer"></div>
+          <button id="selectAllReadyBtn" class="btn">Seleccionar todos</button>
+          <button id="clearReadyBtn" class="btn">Desmarcar</button>
+          <button id="previewReportBtn" class="btn primary">Preparar vista previa</button>
+        </div>
+        <div class="callout">Desmarcar una GR en la vista previa solo la excluye de ese cargo. Conserva su Resultado y permanece en Listos para enviar.</div>
+        <div class="table-wrap panel">
+          <table>
+            <thead><tr><th>✓</th><th>GR cliente</th><th>GRT</th><th>Pedido</th><th>Destinatario</th><th>Tipo</th><th>Resultado</th><th>Docs a enviar ahora</th><th>Ver</th></tr></thead>
+            <tbody id="readyTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-general" class="page hidden">
+        <div class="panel toolbar">
+          <div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="generalSearch" placeholder="Buscar…" /></div>
+          <div class="segmented" id="generalSegments"><button class="active" data-state="">Todos</button><button data-state="active">Activos</button><button data-state="liquidated">Liquidados</button><button data-state="cancelled">Anulados</button></div>
+        </div>
+        <div class="table-wrap panel">
+          <table class="wide-table">
+            <thead><tr><th>Fecha guía</th><th>Distrito</th><th>HR</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>GRT</th><th>GR cliente</th><th>Tipo</th><th>Resultado</th><th>Estado final</th><th>Documentación acumulada</th><th>Docs por enviar</th><th>Observaciones</th><th>Ver</th></tr></thead>
+            <tbody id="generalTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-history" class="page hidden">
+        <div class="table-wrap panel">
+          <table>
+            <thead><tr><th>Cargo</th><th>Fecha entrega</th><th>Versión vigente</th><th>Guías</th><th>Confirmado por</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <tbody id="historyTableBody"></tbody>
+          </table>
+        </div>
+        <div id="historyDetail" class="panel hidden"></div>
+      </section>
+
+      <section id="page-closed" class="page hidden">
+        <div class="table-wrap panel">
+          <table class="wide-table">
+            <thead><tr><th>Fecha liquidación</th><th>GRT</th><th>GR cliente</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>Distrito</th><th>Tipo</th><th>Documentación final</th><th>Cargo</th><th>Ver</th></tr></thead>
+            <tbody id="closedTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="page-import" class="page hidden">
+        <div class="panel">
+          <div class="section-head"><div><div class="eyebrow">PRUEBA PILOTO</div><h3>Data inicial migrada + nuevas importaciones</h3></div><div class="import-actions"><div class="field import-date"><label>Nuevas GR desde</label><input id="importFromDate" type="date"></div><input id="dataImportFile" type="file" accept=".xlsx,.xls" class="hidden"><button id="loadImportBtn" class="btn">Importar nueva data</button><button id="confirmCorrectImport" class="btn primary" disabled>Confirmar nuevas GR correctas</button></div></div>
+          <p class="muted">La V2 Web Beta inicia con las guías de tu control actual que estaban <strong>sin ACUSE RECIBIDO</strong>, cruzadas contra Tradel y Roche. Para las siguientes cargas usa un Excel con la data Tradel y la data Roche en sus dos primeras pestañas.</p>
+          <div class="stats stats-4 import-stats">
+            <div class="stat"><span>GR en la carga</span><strong id="importProcessed">0</strong></div>
+            <div class="stat"><span>Nuevas correctas</span><strong id="importCorrect">0</strong></div>
+            <div class="stat warn-stat"><span>Por revisar</span><strong id="importReview">0</strong></div>
+            <div class="stat"><span>Ya existentes</span><strong id="importExisting">0</strong></div>
+          </div>
+          <div class="callout" id="importMessage">La data inicial ya está cargada. Al importar, el sistema no duplica una GR existente y avisará si detecta un cambio de GRT.</div>
+        </div>
+        <div id="grtChangesPanel" class="panel hidden"><h3>Cambios de GRT detectados</h3><p class="muted">La GR ya existe, pero la nueva data trae otra GRT. Revisa y confirma solo si corresponde reemplazarla.</p><div class="table-wrap"><table><thead><tr><th>GR</th><th>GRT actual</th><th>Nueva GRT</th><th>Pedido</th><th>Acción</th></tr></thead><tbody id="grtChangesBody"></tbody></table></div></div>
+        <div class="panel">
+          <h3>Por revisar</h3>
+          <div class="table-wrap"><table><thead><tr><th>GR</th><th>GRT</th><th>Pedido</th><th>HR</th><th>Destinatario</th><th>Dirección</th><th>Motivo</th><th>Acción</th></tr></thead><tbody id="reviewTableBody"></tbody></table></div>
+        </div>
+        <div class="panel">
+          <h3>Advertencias de la última carga</h3>
+          <div id="rocheOnlyList" class="warning-list"></div>
+        </div>
+      </section>
+
+      <div id="modalBackdrop" class="modal-backdrop hidden">
+        <div id="modal" class="modal">
+          <div class="modal-head"><div><div class="eyebrow" id="modalEyebrow">OPERACIÓN</div><h3 id="modalTitle"></h3><p id="modalSubtitle" class="muted"></p></div><button id="modalClose" class="icon-btn" aria-label="Cerrar">×</button></div>
+          <div id="modalBody"></div>
+        </div>
+      </div>
+      <div id="toast" class="toast hidden"></div>
+      <div id="floatingHScroll" class="floating-hscroll hidden" aria-label="Desplazamiento horizontal"><div class="floating-hscroll-inner"></div></div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase_config.js"></script>
+  <script src="seed_data.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="jszip.min.js"></script>
+  <script src="report_template_data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
