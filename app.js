@@ -3,7 +3,7 @@
 
   const SEED = window.ROCHE_PILOT_DATA || [];
   const ROCHE_ONLY = window.ROCHE_ONLY_WARNINGS || [];
-  const STORAGE_KEY = 'roche_v2_web_beta_cache';
+  const STORAGE_KEY = 'roche_v2_1_cache';
   const APP_STATE_ID = 'roche_shared';
   const SUPA_CFG = window.ROCHE_SUPABASE || {};
   const db = (window.supabase && SUPA_CFG.url && SUPA_CFG.publishableKey) ? window.supabase.createClient(SUPA_CFG.url, SUPA_CFG.publishableKey) : null;
@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.0-web-beta', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[],
+      version:'2.1-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -68,7 +68,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.0-web-beta';
+    copy.version='2.1-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.0-web-beta';
+      state.version='2.1-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.0-web-beta'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.1-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -149,6 +149,7 @@
   function sumDocs(r, unsentOnly=false){
     const out={grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]};
     (r.receipts||[]).forEach(m=>{
+      if(m.annulled) return;
       if(unsentOnly && m.sentReportId) return;
       const d=m.docs||{};
       ['grt','gr','grCopies','actas','pecosas','factura','oc'].forEach(k=>out[k]+=Number(d[k]||0));
@@ -157,17 +158,17 @@
     return out;
   }
   function hasUnsent(r){
-    return (r.receipts||[]).some(m=>!m.sentReportId && docCount(m.docs)>0);
+    return (r.receipts||[]).some(m=>!m.annulled && !m.sentReportId && docCount(m.docs)>0);
   }
   function docCount(d={}){
     return ['grt','gr','grCopies','actas','pecosas','factura','oc'].reduce((n,k)=>n+Number(d[k]||0),0)+(d.extras||[]).length;
   }
   function latestReceiptDateForUnsent(r){
-    const arr=(r.receipts||[]).filter(m=>!m.sentReportId && docCount(m.docs)>0).map(m=>m.at).sort();
+    const arr=(r.receipts||[]).filter(m=>!m.annulled && !m.sentReportId && docCount(m.docs)>0).map(m=>m.at).sort();
     return arr.length?arr[arr.length-1]:'';
   }
   function latestReceiptDateForReport(r, reportId){
-    const arr=(r.receipts||[]).filter(m=>m.sentReportId===reportId).map(m=>m.at).sort();
+    const arr=(r.receipts||[]).filter(m=>!m.annulled && m.sentReportId===reportId).map(m=>m.at).sort();
     return arr.length?arr[arr.length-1]:'';
   }
 
@@ -220,6 +221,7 @@
   function sumDocsBy(r, predicate){
     const out={grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]};
     (r.receipts||[]).forEach(m=>{
+      if(m.annulled) return;
       if(!predicate(m)) return;
       const d=m.docs||{};
       ['grt','gr','grCopies','actas','pecosas','factura','oc'].forEach(k=>out[k]+=Number(d[k]||0));
@@ -243,7 +245,7 @@
   function sentBreakdown(r){
     const byReport={};
     (r.receipts||[]).forEach(m=>{
-      if(!m.sentReportId) return;
+      if(m.annulled || !m.sentReportId) return;
       const id=m.sentReportId;
       if(!byReport[id]) byReport[id]={grt:false,docs:{grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]}};
       const d=m.docs||{};
@@ -328,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.0-web-beta'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.1-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -456,7 +458,7 @@
       if(data.facturaState) r.facturaState=data.facturaState;
       if(data.ocState) r.ocState=data.ocState;
       if(data.docs.grt){ setGRTReceived(r.grt); data.docs.grt=0; }
-      if(docCount(data.docs)>0) r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs:data.docs,sentReportId:null});
+      if(docCount(data.docs)>0) r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs:data.docs,sentReportId:null,facturaStateChange:data.facturaState||'',ocStateChange:data.ocState||'',annulled:false});
       r.audit.push({at:nowIso(),user:state.currentUser,action:mode==='add'?'Nueva recepción':'Registro rápido',detail:docsTextFromRaw(data.docs)});
       recalc(r); saveState(); audit(mode==='add'?'Registro de nueva recepción':'Registro rápido de GR',`${r.gr} · ${selectedType}`);
       closeModal(); $('#quickSearch').value=''; $('#quickResult').classList.add('hidden'); renderAll(); if(mode==='quick') $('#quickSearch').focus(); toast('Recepción guardada');
@@ -516,7 +518,7 @@
     $('#savePkg').onclick=()=>savePackage(group,base);
   }
   function packageAccumulatedReference(r){
-    const hasAny=isGRTReceived(r) || (r.receipts||[]).some(m=>docCount(m.docs)>0) || !!r.facturaState || !!r.ocState;
+    const hasAny=isGRTReceived(r) || (r.receipts||[]).some(m=>!m.annulled && docCount(m.docs)>0) || !!r.facturaState || !!r.ocState;
     if(!hasAny) return '';
     const parts=[];
     const d=sumDocs(r,false);
@@ -569,7 +571,7 @@
       if(type==='Venta CENARES'){ docs.actas=Math.max(0,Math.min(4,Number($('.pkgCntAct',area)?.value||0))); docs.pecosas=Math.max(0,Math.min(4,Number($('.pkgCntPec',area)?.value||0))); }
       const fs=$('.pkgFact',area)?.value||'', os=$('.pkgOC',area)?.value||''; if(fs==='Recibido')docs.factura=1; if(os==='Recibido')docs.oc=1; if(fs)r.facturaState=fs; if(os)r.ocState=os;
       $$('.extra-tag',area).forEach(x=>docs.extras.push(x.dataset.value));
-      r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs,sentReportId:null});
+      r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs,sentReportId:null,facturaStateChange:fs||'',ocStateChange:os||'',annulled:false});
       r.audit.push({at:nowIso(),user:state.currentUser,action:'Registro de paquete',detail:docsTextFromRaw(docs)}); recalc(r); delete r._pkgType;
     });
     saveState(); audit('Registro de paquete',`${base.grt}: ${arrivedRows.length}/${rows.length} GR`); closeModal(); $('#quickSearch').value=''; $('#quickResult').classList.add('hidden'); renderAll(); $('#quickSearch').focus(); toast(`Paquete guardado: ${arrivedRows.length}/${rows.length} GR`);
@@ -668,21 +670,73 @@
   }
 
   // ---------- Detail ----------
+  function receiptAssociatedGRT(r,m){
+    const ledger=getGRTLedger(r.grt);
+    if(!ledger || groupFor(r).length>1) return false;
+    const diff=Math.abs(new Date(m.at)-new Date(ledger.at));
+    return diff<=30000;
+  }
   function detailReceiptRows(r){
     const group=groupFor(r), shared=group.length>1, ledger=getGRTLedger(r.grt);
-    const events=(r.receipts||[]).map(m=>({at:m.at,user:m.user,docs:docsTextFromRaw(m.docs),sentReportId:m.sentReportId,receipt:m}));
+    const events=(r.receipts||[]).map(m=>({at:m.at,user:m.user,docs:docsTextFromRaw(m.docs),sentReportId:m.sentReportId,receipt:m,annulled:!!m.annulled}));
     if(ledger && !shared){
       let nearest=null, best=Infinity;
-      events.forEach(e=>{ const diff=Math.abs(new Date(e.at)-new Date(ledger.at)); if(diff<best){best=diff;nearest=e;} });
+      events.filter(e=>!e.annulled).forEach(e=>{ const diff=Math.abs(new Date(e.at)-new Date(ledger.at)); if(diff<best){best=diff;nearest=e;} });
       if(nearest && best<=30000){
         nearest.docs = nearest.docs==='Sin documentos físicos' ? 'GRT' : `GRT + ${nearest.docs}`;
         if(!nearest.sentReportId && ledger.sentReportId) nearest.sentReportId=ledger.sentReportId;
       }else{
-        events.push({at:ledger.at,user:ledger.user||'—',docs:'GRT',sentReportId:ledger.sentReportId||null});
+        events.push({at:ledger.at,user:ledger.user||'—',docs:'GRT',sentReportId:ledger.sentReportId||null,receipt:null,annulled:false});
       }
     }
     events.sort((a,b)=>new Date(a.at)-new Date(b.at));
-    return events.map(e=>`<tr><td>${new Date(e.at).toLocaleString('es-PE')}</td><td>${esc(e.user)}</td><td>${esc(e.docs)}</td><td>${e.sentReportId?esc(reportLabel(e.sentReportId)):'Pendiente de envío'}</td></tr>`).join('');
+    return events.map(e=>{
+      const m=e.receipt;
+      const status=e.annulled
+        ? `<span class="status warning">Anulada</span><br><small>${esc(m.annulReason||'')}</small>`
+        : (e.sentReportId?esc(reportLabel(e.sentReportId)):'Pendiente de envío');
+      let action='—';
+      if(m){
+        if(e.annulled) action='<span class="muted">Sin acción</span>';
+        else if(e.sentReportId) action='<span class="muted">Ya reportada</span>';
+        else if(r.liquidated) action='<span class="muted">Guía liquidada</span>';
+        else action=`<button class="btn small danger-soft" data-annul-receipt="${m.id}">Anular recepción</button>`;
+      }
+      return `<tr class="${e.annulled?'receipt-annulled':''}"><td>${new Date(e.at).toLocaleString('es-PE')}</td><td>${esc(e.user)}</td><td>${e.annulled?`<s>${esc(e.docs)}</s>`:esc(e.docs)}</td><td>${status}</td><td>${action}</td></tr>`;
+    }).join('');
+  }
+  function recalcStatesAfterReceiptAnnul(r){
+    const d=sumDocs(r,false);
+    if(r.facturaState==='Recibido' && d.factura<1) r.facturaState='';
+    if(r.ocState==='Recibido' && d.oc<1) r.ocState='';
+    if(r.manualComplete) r.manualComplete=false;
+    r.readyManual=false;
+    recalc(r);
+  }
+  function annulReceipt(r,receiptId){
+    const m=(r.receipts||[]).find(x=>x.id===receiptId);
+    if(!m || m.annulled) return;
+    if(m.sentReportId){ toast('Esta recepción ya fue incluida en un Cargo. Primero debes corregir ese reporte.',true); return; }
+    if(r.liquidated){ toast('La guía ya está liquidada. No se puede anular una recepción desde aquí.',true); return; }
+    const reason=prompt('Motivo obligatorio para anular esta recepción:', 'Registro de prueba');
+    if(!reason || !reason.trim()) return;
+    const hadAssociatedGRT=receiptAssociatedGRT(r,m);
+    m.annulled=true;
+    m.annulledAt=nowIso();
+    m.annulledBy=state.currentUser;
+    m.annulReason=reason.trim();
+    if(hadAssociatedGRT){
+      const ledger=getGRTLedger(r.grt);
+      if(ledger && !ledger.sentReportId){
+        delete state.grtLedger[r.grt];
+        if(state.grtReceived) delete state.grtReceived[r.grt];
+      }
+    }
+    recalcStatesAfterReceiptAnnul(r);
+    r.audit=r.audit||[];
+    r.audit.push({at:nowIso(),user:state.currentUser,action:'Recepción anulada',detail:`${docsTextFromRaw(m.docs)} · ${reason.trim()}`});
+    saveState(); audit('Recepción anulada',`${r.gr} · ${reason.trim()}`); renderAll();
+    closeModal(); openDetail(r); toast('Recepción anulada y estado recalculado');
   }
   function sharedGRTDetail(r){
     const group=groupFor(r), ledger=getGRTLedger(r.grt);
@@ -695,9 +749,10 @@
     const followHtml=follow.length?`<div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Situación</th><th>Observación</th><th>Usuario</th></tr></thead><tbody>${follow.map(x=>`<tr><td>${new Date(x.at).toLocaleString('es-PE')}</td><td>${esc(x.situation||'—')}</td><td>${esc(x.note||'—')}</td><td>${esc(x.user||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-hint">Sin observaciones registradas en el sistema nuevo.</div>';
     const gh=(r.grtHistory||[]).slice().reverse();
     const grtHist=gh.length?`<div class="grt-history"><h4>Historial de GRT</h4>${gh.map(x=>`<div><b>${esc(x.oldGRT||'—')} → ${esc(x.newGRT||r.grt)}</b><span>${x.at?new Date(x.at).toLocaleString('es-PE'):'Migración inicial'} · ${esc(x.user||'—')} · ${esc(x.reason||'')}</span></div>`).join('')}</div>`:'';
-    const html=`${baseInfo(r)}<div class="detail-kpis"><div><span>Tipo</span><b>${esc(r.type||'Sin tipificar')}</b></div><div><span>Resultado</span><b>${esc(r.result)}</b></div><div><span>Docs por enviar</span><b>${hasUnsent(r)?'Sí':'No'}</b></div><div><span>Documentación acumulada</span><b>${esc(docsText(r,false))}</b></div></div>${sharedGRTDetail(r)}${grtHist}${r.closeReason?`<div class="callout">Liquidación directa: ${esc(r.closeReason)}</div>`:''}<h4>Historial de recepciones</h4><div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Usuario</th><th>Documentos</th><th>Envío</th></tr></thead><tbody>${receipts||'<tr><td colspan="4">Sin recepciones</td></tr>'}</tbody></table></div><div class="detail-section-head"><h4>Observaciones / seguimiento</h4><button class="btn small" id="detailAddFollow">Actualizar seguimiento</button></div>${followHtml}`;
-    openModal('Detalle de guía','Solo lectura para documentos. El seguimiento se registra desde su botón.',html,'detail-modal');
+    const html=`${baseInfo(r)}<div class="detail-kpis"><div><span>Tipo</span><b>${esc(r.type||'Sin tipificar')}</b></div><div><span>Resultado</span><b>${esc(r.result)}</b></div><div><span>Docs por enviar</span><b>${hasUnsent(r)?'Sí':'No'}</b></div><div><span>Documentación acumulada</span><b>${esc(docsText(r,false))}</b></div></div>${sharedGRTDetail(r)}${grtHist}${r.closeReason?`<div class="callout">Liquidación directa: ${esc(r.closeReason)}</div>`:''}<h4>Historial de recepciones</h4><div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Usuario</th><th>Documentos</th><th>Envío</th><th>Acción</th></tr></thead><tbody>${receipts||'<tr><td colspan="5">Sin recepciones</td></tr>'}</tbody></table></div><div class="detail-section-head"><h4>Observaciones / seguimiento</h4><button class="btn small" id="detailAddFollow">Actualizar seguimiento</button></div>${followHtml}`;
+    openModal('Detalle de guía','Puedes anular una recepción no enviada si se registró por error. Las recepciones ya reportadas conservan su trazabilidad.',html,'detail-modal');
     $('#detailAddFollow').onclick=()=>{ closeModal(); openFollowUp(r); };
+    $$('[data-annul-receipt]',$('#modalBody')).forEach(b=>b.onclick=()=>annulReceipt(r,b.dataset.annulReceipt));
   }
   function reportLabel(id){ const rp=state.reports.find(x=>x.id===id); return rp?rp.cargo:id; }
 
@@ -750,7 +805,7 @@
     };
   }
   function latestReceiptDateForBatch(r, includeGRT=false){
-    const arr=(r.receipts||[]).filter(m=>!m.sentReportId && docCount(m.docs)>0).map(m=>m.at);
+    const arr=(r.receipts||[]).filter(m=>!m.annulled && !m.sentReportId && docCount(m.docs)>0).map(m=>m.at);
     if(includeGRT){ const g=getGRTLedger(r.grt); if(g && !g.sentReportId) arr.push(g.at); }
     arr.sort(); return arr.length?arr[arr.length-1]:nowIso();
   }
@@ -773,7 +828,7 @@
     records.forEach(r=>{ if(grtUnsent(r.grt) && carrierByGRT[r.grt]==null) carrierByGRT[r.grt]=r.id; });
     return records.map(r=>{
       const includeGRT=carrierByGRT[r.grt]===r.id;
-      const receiptIds=(r.receipts||[]).filter(m=>!m.sentReportId && docCount(m.docs)>0).map(m=>m.id);
+      const receiptIds=(r.receipts||[]).filter(m=>!m.annulled && !m.sentReportId && docCount(m.docs)>0).map(m=>m.id);
       return {recordId:r.id,gr:r.gr,grt:r.grt,order:r.order,recipient:r.recipient,district:r.district,route:r.route,guideDate:r.guideDate,type:r.type,resultAtSend:r.result,obs:batchObs(r,includeGRT),includeGRT,receiptIds,acuse:latestReceiptDateForBatch(r,includeGRT),deliveryDate:date};
     });
   }
@@ -787,8 +842,8 @@
   }
   function applyReportItemToRecord(r,reportId,item){
     const ids=new Set(item.receiptIds||[]);
-    if(ids.size){ (r.receipts||[]).forEach(m=>{if(ids.has(m.id))m.sentReportId=reportId;}); }
-    else { (r.receipts||[]).forEach(m=>{if(!m.sentReportId && docCount(m.docs)>0)m.sentReportId=reportId;}); }
+    if(ids.size){ (r.receipts||[]).forEach(m=>{if(!m.annulled && ids.has(m.id))m.sentReportId=reportId;}); }
+    else { (r.receipts||[]).forEach(m=>{if(!m.annulled && !m.sentReportId && docCount(m.docs)>0)m.sentReportId=reportId;}); }
     if(item.includeGRT){ const g=getGRTLedger(r.grt); if(g&&!g.sentReportId)g.sentReportId=reportId; }
     recalc(r);
     if(r.result==='Completo'){r.liquidated=true;r.liquidatedAt=nowIso();r.readyManual=false;} else if(r.result==='Parcial'){r.readyManual=false;}
