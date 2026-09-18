@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
+      version:'2.2.1-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2-web';
+      state.version='2.2.1-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.1-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.1-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.1-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -828,7 +828,7 @@
     $$('[data-loose-delete]').forEach(b=>b.onclick=()=>deleteLooseDoc(b.dataset.looseDelete));
   }
   function previewReport(){
-    const guideIds=$$('.readyCheck:checked').map(x=>Number(x.value));
+    const guideIds=$('.readyCheck:checked').map(x=>x.value);
     const looseIds=$$('.looseReadyCheck:checked').map(x=>x.value);
     if(!guideIds.length&&!looseIds.length){toast('Selecciona al menos una GR o documentación no asociada',true);return;}
     const date=$('#reportDate').value; if(!date){toast('Selecciona la fecha de entrega a Roche',true);return;}
@@ -880,9 +880,15 @@
     return ids.map(id=>ensureLooseDocs().find(x=>x.id===id)).filter(Boolean).map(x=>({kind:'loose',looseId:x.id,gr:'',grt:'',order:'',recipient:'',district:'',route:'',guideDate:'',type:'Otros',resultAtSend:'',obs:looseObs(x),includeGRT:false,receiptIds:[],acuse:x.receivedAt||nowIso(),deliveryDate:date,note:x.note||''}));
   }
   function confirmNewReport(refs,draft){
-    const guideIds=refs.filter(x=>x.startsWith('g:')).map(x=>Number(x.slice(2))); const looseIds=refs.filter(x=>x.startsWith('l:')).map(x=>x.slice(2));
+    const guideIds=refs.filter(x=>x.startsWith('g:')).map(x=>x.slice(2)); const looseIds=refs.filter(x=>x.startsWith('l:')).map(x=>x.slice(2));
     const report={id:uid('rep'),cargo:draft.cargo,date:draft.date,to:'DIEGO',status:'Vigente',currentVersion:1,versions:[]};
-    const items=[...buildBatchItems(guideIds,report.id,draft.date),...buildLooseBatchItems(looseIds,draft.date)];
+    const guideItems=buildBatchItems(guideIds,report.id,draft.date);
+    const looseItems=buildLooseBatchItems(looseIds,draft.date);
+    if(guideItems.length!==guideIds.length || looseItems.length!==looseIds.length){
+      alert('No se pudo vincular uno o más ítems seleccionados. El reporte NO fue confirmado. Actualiza la página y vuelve a preparar la vista previa.');
+      return;
+    }
+    const items=[...guideItems,...looseItems];
     report.versions.push({version:1,at:nowIso(),user:state.currentUser,reason:'Emisión inicial',items:deepClone(items),status:'Vigente'}); state.reports.push(report);
     items.forEach(it=>applyReportItem(it,report.id));
     saveState(); audit('Reporte Roche confirmado',`${report.cargo} · ${items.length} ítems`); closeModal(); renderAll(); downloadReportXlsx(report); toast(`${report.cargo} confirmado y Excel generado`);
@@ -905,7 +911,7 @@
     oldItems.forEach(it=>{ if(it.kind==='loose'){const x=ensureLooseDocs().find(v=>v.id===it.looseId);if(x&&x.sentReportId===report.id)x.sentReportId=null;return;} const r=getRecord(it.recordId);if(!r)return;const ids=new Set(it.receiptIds||[]);(r.receipts||[]).forEach(m=>{if((ids.size&&ids.has(m.id))||(!ids.size&&m.sentReportId===report.id)){if(m.sentReportId===report.id)m.sentReportId=null;}});const g=getGRTLedger(r.grt);if(it.includeGRT&&g&&g.sentReportId===report.id)g.sentReportId=null;if(r.liquidated){r.liquidated=false;r.liquidatedAt='';}recalc(r); });
     const wanted=new Set(refs); const newItems=deepClone(oldItems.filter(it=>wanted.has(reportItemKey(it)))); newItems.forEach(it=>applyReportItem(it,report.id));
     report.versions.forEach(v=>{if(v.status==='Vigente')v.status='Corregida';}); report.currentVersion+=1; report.date=draft.date; report.versions.push({version:report.currentVersion,at:nowIso(),user:state.currentUser,reason:reason.trim(),items:deepClone(newItems),status:'Vigente'});
-    const removed=oldKeys.filter(k=>!wanted.has(k)); removed.forEach(k=>{ if(k.startsWith('g:')){const r=getRecord(Number(k.slice(2)));if(!r)return;recalc(r);if(r.result==='Parcial')r.readyManual=true;} });
+    const removed=oldKeys.filter(k=>!wanted.has(k)); removed.forEach(k=>{ if(k.startsWith('g:')){const r=getRecord(k.slice(2));if(!r)return;recalc(r);if(r.result==='Parcial')r.readyManual=true;} });
     saveState(); audit('Corrección de reporte Roche',`${report.cargo} · v${report.currentVersion} · ${reason.trim()}`); closeModal(); renderAll(); downloadReportXlsx(report); toast(`${report.cargo} corregido. Se mantiene el mismo correlativo.`);
   }
 
@@ -1008,9 +1014,10 @@
 
   // ---------- History / correction ----------
   function renderHistory(){
-    $('#historyTableBody').innerHTML=state.reports.slice().reverse().map(r=>`<tr><td><b>${esc(r.cargo)}</b></td><td>${fmtDate(r.date)}</td><td>v${r.currentVersion}</td><td>${currentReportItems(r).length}</td><td>${esc(r.versions[r.versions.length-1].user)}</td><td>${esc(r.status)}</td><td><button class="btn small" data-hview="${r.id}">Ver</button><button class="btn small" data-download="${r.id}">Descargar</button><button class="btn small" data-correct="${r.id}">Corregir reporte</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty-row">No hay reportes confirmados.</td></tr>';
-    $$('[data-hview]').forEach(b=>b.onclick=()=>showHistoryDetail(state.reports.find(x=>x.id===b.dataset.hview)));
-    $$('[data-download]').forEach(b=>b.onclick=()=>downloadReportXlsx(state.reports.find(x=>x.id===b.dataset.download)));
+    $('#historyTableBody').innerHTML=state.reports.slice().reverse().map(r=>`<tr><td><b>${esc(r.cargo)}</b></td><td>${fmtDate(r.date)}</td><td>v${r.currentVersion}</td><td>${currentReportItems(r).length}</td><td>${esc(r.versions[r.versions.length-1].user)}</td><td>${esc(r.status)}</td><td><button class="btn small" data-hview="${r.id}">Ver contenido</button><button class="btn small" data-hversions="${r.id}">Versiones</button><button class="btn small" data-download="${r.id}">Descargar</button><button class="btn small" data-correct="${r.id}">Corregir reporte</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty-row">No hay reportes confirmados.</td></tr>';
+    $('[data-hview]').forEach(b=>b.onclick=()=>{const r=state.reports.find(x=>x.id===b.dataset.hview); if(r) showReportVersionPreview(r,getReportVersion(r,r.currentVersion));});
+    $('[data-hversions]').forEach(b=>b.onclick=()=>showHistoryDetail(state.reports.find(x=>x.id===b.dataset.hversions)));
+    $('[data-download]').forEach(b=>b.onclick=()=>downloadReportXlsx(state.reports.find(x=>x.id===b.dataset.download)));
     $$('[data-correct]').forEach(b=>b.onclick=()=>startCorrection(state.reports.find(x=>x.id===b.dataset.correct)));
   }
   function showHistoryDetail(r){
