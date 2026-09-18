@@ -1,13 +1,10 @@
-# Roche V2.2 Web
+ROCHE V2.2.4 WEB
 
-Actualización sobre V2.1 sin modificar ni reiniciar la base de Supabase.
+Cambios:
+- Corrige la vista previa y confirmación de reportes para GR importadas con ID de texto.
+- Las guías Parciales marcadas manualmente como Completo, con documentos pendientes de enviar, pasan a Listos y pueden enviarse.
+- Bloquea la confirmación si algún ítem seleccionado no pudo vincularse, evitando reportes incompletos silenciosos.
+- Historial Roche permite Ver contenido directamente y conserva Versiones por separado.
+- Mantiene documentación no asociada y anulación de recepciones no enviadas.
 
-## Cambios
-- Documentación no asociada a GR/GRT/Pedido desde **Listos para enviar**.
-- Permite registrar múltiples documentos y cantidades (ej. `Acta + 2 Pecosas`).
-- Se incluye en el Cargo Roche con GR/GRT/Pedido vacíos y `Tipo = Otros`.
-- Queda en Historial Roche y puede retirarse mediante Corregir reporte.
-- Observaciones/seguimiento ahora muestran **Situación** y **Observación** separadas.
-- Conserva Anular recepción y toda la lógica anterior.
-
-No requiere ejecutar SQL nuevo. Solo reemplazar los archivos web en GitHub Pages.
+No requiere cambios SQL. Usa la misma base Supabase y conserva la data existente.
