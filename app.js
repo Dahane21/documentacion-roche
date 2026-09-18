@@ -3,7 +3,7 @@
 
   const SEED = window.ROCHE_PILOT_DATA || [];
   const ROCHE_ONLY = window.ROCHE_ONLY_WARNINGS || [];
-  const STORAGE_KEY = 'roche_v2_1_cache';
+  const STORAGE_KEY = 'roche_v2_2_cache';
   const APP_STATE_ID = 'roche_shared';
   const SUPA_CFG = window.ROCHE_SUPABASE || {};
   const db = (window.supabase && SUPA_CFG.url && SUPA_CFG.publishableKey) ? window.supabase.createClient(SUPA_CFG.url, SUPA_CFG.publishableKey) : null;
@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.1-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[],
+      version:'2.2-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -68,7 +68,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.1-web';
+    copy.version='2.2-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.1-web';
+      state.version='2.2-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.1-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.0-web-beta',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.1-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -584,12 +584,13 @@
   function followUpCell(r){
     const f=latestFollowUp(r);
     if(!f) return `<button class="obs-link empty" data-follow="${r.id}">+ Agregar</button>`;
-    const sit=f.situation?`<b>${esc(f.situation)}</b>`:''; const note=f.note?`<span>${esc(f.note)}</span>`:'';
+    const sit=f.situation?`<span class="obs-situation"><b>Situación:</b> ${esc(f.situation)}</span>`:'';
+    const note=f.note?`<span class="obs-note"><b>Observación:</b> ${esc(f.note)}</span>`:'';
     return `<button class="obs-link" data-follow="${r.id}">${sit}${note}<small>${new Date(f.at).toLocaleDateString('es-PE')}</small></button>`;
   }
   function openFollowUp(r){
     const history=(r.followUps||[]).slice().reverse();
-    const hist=history.length?`<div class="follow-history"><h4>Historial</h4>${history.map(x=>`<div class="follow-item"><div><b>${esc(x.situation||'Sin situación')}</b><span>${esc(x.note||'')}</span></div><small>${new Date(x.at).toLocaleString('es-PE')} · ${esc(x.user||'—')}</small></div>`).join('')}</div>`:'<div class="empty-hint">Aún no hay observaciones registradas en el sistema nuevo.</div>';
+    const hist=history.length?`<div class="follow-history"><h4>Historial</h4>${history.map(x=>`<div class="follow-item"><div class="follow-copy"><div><b>Situación:</b> ${esc(x.situation||'—')}</div><div><b>Observación:</b> ${esc(x.note||'—')}</div></div><small>${new Date(x.at).toLocaleString('es-PE')} · ${esc(x.user||'—')}</small></div>`).join('')}</div>`:'<div class="empty-hint">Aún no hay observaciones registradas en el sistema nuevo.</div>';
     const html=`${baseInfo(r)}<div class="form-grid follow-form"><div class="field span2"><label>Situación</label><input id="followSituation" placeholder="Ej. En tránsito a Lima, En custodia, Trámite detenido"></div><div class="field span2"><label>Observación</label><textarea id="followNote" rows="3" placeholder="Escribe la observación actual…"></textarea></div></div>${hist}<div class="modal-actions"><button class="btn" id="followCancel">Cancelar</button><button class="btn primary" id="followSave">Guardar seguimiento</button></div>`;
     openModal('Observaciones / seguimiento','Independiente del Resultado de la guía. Cada actualización queda en el historial.',html,'follow-modal');
     $('#followCancel').onclick=closeModal; $('#followSave').onclick=()=>{
@@ -774,35 +775,85 @@
   }
 
   // ---------- Ready / report ----------
-  $('#selectAllReadyBtn').onclick=()=>$$('.readyCheck').forEach(x=>x.checked=true);
-  $('#clearReadyBtn').onclick=()=>$$('.readyCheck').forEach(x=>x.checked=false);
+  $('#selectAllReadyBtn').onclick=()=>$$('.readyCheck,.looseReadyCheck').forEach(x=>x.checked=true);
+  $('#clearReadyBtn').onclick=()=>$$('.readyCheck,.looseReadyCheck').forEach(x=>x.checked=false);
   $('#previewReportBtn').onclick=previewReport;
+  $('#addLooseDocsBtn').onclick=()=>openLooseDocsModal();
+
+  function ensureLooseDocs(){ state.looseDocs=state.looseDocs||[]; return state.looseDocs; }
+  function looseObs(item){
+    return (item.lines||[]).filter(x=>x.name&&Number(x.qty)>0).map(x=>Number(x.qty)===1?x.name:`${Number(x.qty)} ${x.name}`).join(' + ') || '—';
+  }
+  function openLooseDocsModal(item=null){
+    const isEdit=!!item;
+    const date=(item?.receivedAt||nowIso()).slice(0,10);
+    const html=`<div class="callout">Usa esta opción solo cuando el documento físico que enviarás a Roche no pertenece a ninguna GR, GRT ni Pedido.</div>
+      <div class="form-grid"><div class="field"><label>Fecha de recepción</label><input id="looseDate" type="date" value="${date}"></div><div class="field span2"><label>Observación interna (opcional)</label><input id="looseNote" value="${esc(item?.note||'')}" placeholder="Ej. Documentación adicional remitida por provincia"></div></div>
+      <div class="loose-lines-head"><b>Documentos</b><button class="btn small" id="addLooseLine" type="button">+ Agregar línea</button></div>
+      <div id="looseLines"></div>
+      <div class="modal-actions"><button class="btn" id="looseCancel">Cancelar</button><button class="btn primary" id="looseSave">${isEdit?'GUARDAR CAMBIOS':'AGREGAR A LISTOS PARA ENVIAR'}</button></div>`;
+    openModal(isEdit?'Editar documentación no asociada':'Documentación no asociada','Se incluirá en el mismo Cargo Roche sin inventar GR, GRT ni Pedido.',html,'loose-modal');
+    const lines=(item?.lines?.length?deepClone(item.lines):[{name:'',qty:1}]);
+    function drawLines(){
+      $('#looseLines').innerHTML=lines.map((x,i)=>`<div class="loose-line"><input class="loose-name" data-i="${i}" value="${esc(x.name||'')}" placeholder="Ej. Acta, Pecosas, Carta"><input class="loose-qty" data-i="${i}" type="number" min="1" step="1" value="${Number(x.qty)||1}"><button class="icon-btn" data-loose-remove="${i}" type="button" title="Quitar línea">✕</button></div>`).join('');
+      $$('.loose-name').forEach(el=>el.oninput=()=>{lines[Number(el.dataset.i)].name=el.value;});
+      $$('.loose-qty').forEach(el=>el.oninput=()=>{lines[Number(el.dataset.i)].qty=Math.max(1,Number(el.value)||1);});
+      $$('[data-loose-remove]').forEach(b=>b.onclick=()=>{ if(lines.length===1){lines[0]={name:'',qty:1};} else lines.splice(Number(b.dataset.looseRemove),1); drawLines(); });
+    }
+    drawLines();
+    $('#addLooseLine').onclick=()=>{lines.push({name:'',qty:1});drawLines();};
+    $('#looseCancel').onclick=closeModal;
+    $('#looseSave').onclick=()=>{
+      const clean=lines.map(x=>({name:String(x.name||'').trim(),qty:Math.max(1,Number(x.qty)||1)})).filter(x=>x.name);
+      if(!clean.length){toast('Agrega al menos un documento',true);return;}
+      const receivedAt=$('#looseDate').value; if(!receivedAt){toast('Indica la fecha de recepción',true);return;}
+      const note=$('#looseNote').value.trim();
+      if(isEdit){ item.lines=clean; item.receivedAt=`${receivedAt}T12:00:00`; item.note=note; item.updatedAt=nowIso(); item.updatedBy=state.currentUser; audit('Documentación no asociada editada',looseObs(item)); }
+      else { const n={id:uid('loose'),lines:clean,receivedAt:`${receivedAt}T12:00:00`,note,createdAt:nowIso(),createdBy:state.currentUser,sentReportId:null}; ensureLooseDocs().push(n); audit('Documentación no asociada agregada',looseObs(n)); }
+      saveState(); closeModal(); renderAll(); toast('Documentación agregada a Listos para enviar');
+    };
+  }
+  function deleteLooseDoc(id){
+    const item=ensureLooseDocs().find(x=>x.id===id); if(!item||item.sentReportId)return;
+    if(!confirm(`¿Quitar de Listos para enviar: ${looseObs(item)}?`))return;
+    state.looseDocs=state.looseDocs.filter(x=>x.id!==id); audit('Documentación no asociada eliminada',looseObs(item)); saveState(); renderAll();
+  }
   function renderReady(){
-    syncCargoField();
-    recalcAll(); const rows=allOperational().filter(isReady);
-    $('#readyTableBody').innerHTML=rows.map(r=>`<tr><td><input class="readyCheck big-checkbox" type="checkbox" value="${r.id}" checked></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td>${esc(r.type)}</td><td><span class="status ${r.result.toLowerCase()}">${esc(r.result)}</span></td><td>${esc(docsText(r,true))}</td><td><button class="icon-btn" data-view-ready="${r.id}">🔍</button></td></tr>`).join('')||'<tr><td colspan="9" class="empty-row">No hay guías listas para enviar.</td></tr>';
+    syncCargoField(); recalcAll(); const rows=allOperational().filter(isReady); const loose=ensureLooseDocs().filter(x=>!x.sentReportId);
+    const guideRows=rows.map(r=>`<tr><td><input class="readyCheck big-checkbox" type="checkbox" value="${r.id}" checked></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td>${esc(r.type)}</td><td><span class="status ${r.result.toLowerCase()}">${esc(r.result)}</span></td><td>${esc(docsText(r,true))}</td><td><button class="icon-btn" data-view-ready="${r.id}">🔍</button></td></tr>`).join('');
+    const looseRows=loose.map(x=>`<tr class="loose-ready-row"><td><input class="looseReadyCheck big-checkbox" type="checkbox" value="${esc(x.id)}" checked></td><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>${esc(x.note||'—')}</td><td>Otros</td><td><span class="status warning">Por enviar</span></td><td><b>${esc(looseObs(x))}</b></td><td class="actions-cell"><button class="btn small" data-loose-edit="${esc(x.id)}">Editar</button><button class="btn small danger" data-loose-delete="${esc(x.id)}">Quitar</button></td></tr>`).join('');
+    $('#readyTableBody').innerHTML=(guideRows+looseRows)||'<tr><td colspan="9" class="empty-row">No hay guías ni documentación adicional lista para enviar.</td></tr>';
     $$('[data-view-ready]').forEach(b=>b.onclick=()=>openDetail(getRecord(b.dataset.viewReady)));
+    $$('[data-loose-edit]').forEach(b=>b.onclick=()=>openLooseDocsModal(ensureLooseDocs().find(x=>x.id===b.dataset.looseEdit)));
+    $$('[data-loose-delete]').forEach(b=>b.onclick=()=>deleteLooseDoc(b.dataset.looseDelete));
   }
   function previewReport(){
-    const ids=$$('.readyCheck:checked').map(x=>Number(x.value)); if(!ids.length){toast('Selecciona al menos una GR',true);return;}
+    const guideIds=$$('.readyCheck:checked').map(x=>Number(x.value));
+    const looseIds=$$('.looseReadyCheck:checked').map(x=>x.value);
+    if(!guideIds.length&&!looseIds.length){toast('Selecciona al menos una GR o documentación no asociada',true);return;}
     const date=$('#reportDate').value; if(!date){toast('Selecciona la fecha de entrega a Roche',true);return;}
     const cargo=$('#cargoNumber').value.trim(); if(!cargo){toast('Indica el primer CARGO para esta prueba',true);return;}
     if(state.reports.some(r=>String(r.cargo).toLowerCase()===cargo.toLowerCase())){toast('Ese CARGO ya existe. Un reporte nuevo debe usar el siguiente correlativo.',true);return;}
     if(!state.reports.length){ state.settings=state.settings||{}; state.settings.cargoStart=cargo; saveState(); }
-    state.reportDraft={ids,date,cargo}; showReportPreview(state.reportDraft,false);
+    state.reportDraft={guideIds,looseIds,date,cargo}; showReportPreview(state.reportDraft,false);
   }
+  function reportItemKey(it){ return it?.kind==='loose'?`l:${it.looseId}`:`g:${it.recordId}`; }
+  function draftRefs(draft){ return [...(draft.guideIds||[]).map(x=>`g:${x}`),...(draft.looseIds||[]).map(x=>`l:${x}`)]; }
   function showReportPreview(draft, correction=false, report=null){
-    const rows=draft.ids.map(id=>getRecord(id)).filter(Boolean);
-    const previewCarrier={}; rows.forEach(r=>{if(grtUnsent(r.grt) && previewCarrier[r.grt]==null) previewCarrier[r.grt]=r.id;});
-    const snapshotMap=new Map();
-    if(correction && report) currentReportItems(report).forEach(it=>snapshotMap.set(String(it.recordId),it));
-    const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(draft.cargo)}</b></div><div><span>FECHA</span><b>${fmtDate(draft.date)}</b></div><div><span>PARA</span><b>DIEGO</b></div></div><div class="callout">${correction?'Estás viendo exactamente el contenido de la versión vigente. Desmarca solo lo que deseas retirar del cargo.':'Puedes desmarcar una GR. Al hacerlo queda fuera de este cargo, pero conserva su Resultado y su condición de Lista para enviar.'}</div><div class="table-wrap"><table><thead><tr><th>Enviar</th><th>GR</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody>${rows.map(r=>{const snap=snapshotMap.get(String(r.id)); const obs=correction&&snap?snap.obs:batchObs(r,previewCarrier[r.grt]===r.id); const result=correction&&snap?(snap.resultAtSend||r.result):r.result; return `<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="${r.id}" checked></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.type)}</td><td>${esc(result)}</td><td>${esc(obs)}</td></tr>`;}).join('')}</tbody></table></div><div class="modal-actions"><button class="btn" id="backPreview">Volver</button><button class="btn primary big" id="confirmReport">${correction?'GUARDAR CORRECCIÓN Y CONFIRMAR':'CONFIRMAR REPORTE'}</button></div>`;
+    let rowsHtml='';
+    if(correction && report){
+      rowsHtml=currentReportItems(report).map(it=>it.kind==='loose'
+        ? `<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="${esc(reportItemKey(it))}" checked></td><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(it.obs||'—')}</td></tr>`
+        : `<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="${esc(reportItemKey(it))}" checked></td><td><b>${esc(it.gr)}</b></td><td>${esc(it.grt)}</td><td>${esc(it.order)}</td><td>${esc(it.type)}</td><td>${esc(it.resultAtSend||'—')}</td><td>${esc(it.obs||'—')}</td></tr>`).join('');
+    }else{
+      const guides=(draft.guideIds||[]).map(id=>getRecord(id)).filter(Boolean); const previewCarrier={}; guides.forEach(r=>{if(grtUnsent(r.grt)&&previewCarrier[r.grt]==null)previewCarrier[r.grt]=r.id;});
+      rowsHtml=guides.map(r=>`<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="g:${r.id}" checked></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.type)}</td><td>${esc(r.result)}</td><td>${esc(batchObs(r,previewCarrier[r.grt]===r.id))}</td></tr>`).join('');
+      rowsHtml+=(draft.looseIds||[]).map(id=>ensureLooseDocs().find(x=>x.id===id)).filter(Boolean).map(x=>`<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="l:${esc(x.id)}" checked></td><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(looseObs(x))}</td></tr>`).join('');
+    }
+    const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(draft.cargo)}</b></div><div><span>FECHA</span><b>${fmtDate(draft.date)}</b></div><div><span>PARA</span><b>DIEGO</b></div></div><div class="callout">${correction?'Estás viendo exactamente el contenido de la versión vigente. Desmarca solo lo que deseas retirar del cargo.':'Puedes desmarcar cualquier ítem antes de confirmar. La documentación no asociada se reportará con GR/GRT/Pedido vacíos, sin inventar datos.'}</div><div class="table-wrap"><table><thead><tr><th>Enviar</th><th>GR / Ítem</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody>${rowsHtml}</tbody></table></div><div class="modal-actions"><button class="btn" id="backPreview">Volver</button><button class="btn primary big" id="confirmReport">${correction?'GUARDAR CORRECCIÓN Y CONFIRMAR':'CONFIRMAR REPORTE'}</button></div>`;
     openModal(correction?'Corregir reporte':'Vista previa del reporte',correction?'Mismo CARGO. La versión anterior quedará disponible en Historial de versiones.':'Nada cambia definitivamente hasta confirmar.',html,'report-modal');
     $('#backPreview').onclick=closeModal;
-    $('#confirmReport').onclick=()=>{
-      const ids=$$('.previewCheck:checked').map(x=>Number(x.value)); if(!ids.length){toast('El reporte no puede quedar vacío',true);return;}
-      if(correction) confirmCorrection(report,ids,draft); else confirmNewReport(ids,draft);
-    };
+    $('#confirmReport').onclick=()=>{ const refs=$$('.previewCheck:checked').map(x=>x.value); if(!refs.length){toast('El reporte no puede quedar vacío',true);return;} if(correction)confirmCorrection(report,refs,draft); else confirmNewReport(refs,draft); };
   }
   function latestReceiptDateForBatch(r, includeGRT=false){
     const arr=(r.receipts||[]).filter(m=>!m.annulled && !m.sentReportId && docCount(m.docs)>0).map(m=>m.at);
@@ -817,58 +868,44 @@
       if(d.actas) parts.push(`${d.actas} Actas`);
       if(d.pecosas) parts.push(`${d.pecosas} Pecosas`);
     }else if(d.gr) parts.push('gr');
-    if(d.factura) parts.push('fact');
-    if(d.oc) parts.push('oc');
-    d.extras.forEach(x=>parts.push(x));
+    if(d.factura) parts.push('fact'); if(d.oc) parts.push('oc'); d.extras.forEach(x=>parts.push(x));
     return parts.join(' + ') || '—';
   }
   function buildBatchItems(ids,reportId,date){
-    const records=ids.map(id=>getRecord(id)).filter(Boolean);
-    const carrierByGRT={};
+    const records=ids.map(id=>getRecord(id)).filter(Boolean), carrierByGRT={};
     records.forEach(r=>{ if(grtUnsent(r.grt) && carrierByGRT[r.grt]==null) carrierByGRT[r.grt]=r.id; });
-    return records.map(r=>{
-      const includeGRT=carrierByGRT[r.grt]===r.id;
-      const receiptIds=(r.receipts||[]).filter(m=>!m.annulled && !m.sentReportId && docCount(m.docs)>0).map(m=>m.id);
-      return {recordId:r.id,gr:r.gr,grt:r.grt,order:r.order,recipient:r.recipient,district:r.district,route:r.route,guideDate:r.guideDate,type:r.type,resultAtSend:r.result,obs:batchObs(r,includeGRT),includeGRT,receiptIds,acuse:latestReceiptDateForBatch(r,includeGRT),deliveryDate:date};
-    });
+    return records.map(r=>{ const includeGRT=carrierByGRT[r.grt]===r.id; const receiptIds=(r.receipts||[]).filter(m=>!m.annulled&&!m.sentReportId&&docCount(m.docs)>0).map(m=>m.id); return {kind:'guide',recordId:r.id,gr:r.gr,grt:r.grt,order:r.order,recipient:r.recipient,district:r.district,route:r.route,guideDate:r.guideDate,type:r.type,resultAtSend:r.result,obs:batchObs(r,includeGRT),includeGRT,receiptIds,acuse:latestReceiptDateForBatch(r,includeGRT),deliveryDate:date}; });
   }
-  function confirmNewReport(ids,draft){
+  function buildLooseBatchItems(ids,date){
+    return ids.map(id=>ensureLooseDocs().find(x=>x.id===id)).filter(Boolean).map(x=>({kind:'loose',looseId:x.id,gr:'',grt:'',order:'',recipient:'',district:'',route:'',guideDate:'',type:'Otros',resultAtSend:'',obs:looseObs(x),includeGRT:false,receiptIds:[],acuse:x.receivedAt||nowIso(),deliveryDate:date,note:x.note||''}));
+  }
+  function confirmNewReport(refs,draft){
+    const guideIds=refs.filter(x=>x.startsWith('g:')).map(x=>Number(x.slice(2))); const looseIds=refs.filter(x=>x.startsWith('l:')).map(x=>x.slice(2));
     const report={id:uid('rep'),cargo:draft.cargo,date:draft.date,to:'DIEGO',status:'Vigente',currentVersion:1,versions:[]};
-    const items=buildBatchItems(ids,report.id,draft.date);
-    report.versions.push({version:1,at:nowIso(),user:state.currentUser,reason:'Emisión inicial',items:deepClone(items),status:'Vigente'});
-    state.reports.push(report);
-    items.forEach(it=>applyReportItemToRecord(getRecord(it.recordId),report.id,it));
-    saveState(); audit('Reporte Roche confirmado',`${report.cargo} · ${ids.length} GR`); closeModal(); renderAll(); downloadReportXlsx(report); toast(`${report.cargo} confirmado y Excel generado`);
+    const items=[...buildBatchItems(guideIds,report.id,draft.date),...buildLooseBatchItems(looseIds,draft.date)];
+    report.versions.push({version:1,at:nowIso(),user:state.currentUser,reason:'Emisión inicial',items:deepClone(items),status:'Vigente'}); state.reports.push(report);
+    items.forEach(it=>applyReportItem(it,report.id));
+    saveState(); audit('Reporte Roche confirmado',`${report.cargo} · ${items.length} ítems`); closeModal(); renderAll(); downloadReportXlsx(report); toast(`${report.cargo} confirmado y Excel generado`);
+  }
+  function applyReportItem(item,reportId){
+    if(item.kind==='loose'){ const x=ensureLooseDocs().find(v=>v.id===item.looseId); if(x)x.sentReportId=reportId; return; }
+    const r=getRecord(item.recordId); if(r)applyReportItemToRecord(r,reportId,item);
   }
   function applyReportItemToRecord(r,reportId,item){
-    const ids=new Set(item.receiptIds||[]);
-    if(ids.size){ (r.receipts||[]).forEach(m=>{if(!m.annulled && ids.has(m.id))m.sentReportId=reportId;}); }
-    else { (r.receipts||[]).forEach(m=>{if(!m.annulled && !m.sentReportId && docCount(m.docs)>0)m.sentReportId=reportId;}); }
-    if(item.includeGRT){ const g=getGRTLedger(r.grt); if(g&&!g.sentReportId)g.sentReportId=reportId; }
-    recalc(r);
+    const ids=new Set(item.receiptIds||[]); if(ids.size){(r.receipts||[]).forEach(m=>{if(!m.annulled&&ids.has(m.id))m.sentReportId=reportId;});} else {(r.receipts||[]).forEach(m=>{if(!m.annulled&&!m.sentReportId&&docCount(m.docs)>0)m.sentReportId=reportId;});}
+    if(item.includeGRT){const g=getGRTLedger(r.grt);if(g&&!g.sentReportId)g.sentReportId=reportId;} recalc(r);
     if(r.result==='Completo'){r.liquidated=true;r.liquidatedAt=nowIso();r.readyManual=false;} else if(r.result==='Parcial'){r.readyManual=false;}
     r.audit.push({at:nowIso(),user:state.currentUser,action:'Incluida en reporte Roche',detail:reportLabel(reportId)});
   }
   function currentReportItems(report){ return report.versions.find(v=>v.version===report.currentVersion)?.items||[]; }
   function getReportVersion(report,version){ return report.versions.find(v=>Number(v.version)===Number(version))||null; }
-  function confirmCorrection(report,newIds,draft){
+  function confirmCorrection(report,refs,draft){
     const reason=prompt('Motivo de la corrección (obligatorio):'); if(!reason?.trim())return;
-    const oldItems=currentReportItems(report); const oldIds=oldItems.map(x=>x.recordId);
-    oldItems.forEach(it=>{
-      const r=getRecord(it.recordId); if(!r)return;
-      const ids=new Set(it.receiptIds||[]);
-      (r.receipts||[]).forEach(m=>{ if((ids.size&&ids.has(m.id)) || (!ids.size&&m.sentReportId===report.id)){ if(m.sentReportId===report.id)m.sentReportId=null; } });
-      const g=getGRTLedger(r.grt); if(it.includeGRT && g&&g.sentReportId===report.id)g.sentReportId=null;
-      if(r.liquidated){r.liquidated=false;r.liquidatedAt='';}
-      recalc(r);
-    });
-    const wanted=new Set(newIds.map(String));
-    const newItems=deepClone(oldItems.filter(it=>wanted.has(String(it.recordId))));
-    newItems.forEach(it=>applyReportItemToRecord(getRecord(it.recordId),report.id,it));
-    report.versions.forEach(v=>{if(v.status==='Vigente')v.status='Corregida';});
-    report.currentVersion+=1; report.date=draft.date;
-    report.versions.push({version:report.currentVersion,at:nowIso(),user:state.currentUser,reason:reason.trim(),items:deepClone(newItems),status:'Vigente'});
-    const removed=oldIds.filter(id=>!wanted.has(String(id))); removed.forEach(id=>{const r=getRecord(id); if(!r)return; recalc(r); if(r.result==='Parcial')r.readyManual=true;});
+    const oldItems=currentReportItems(report); const oldKeys=oldItems.map(reportItemKey);
+    oldItems.forEach(it=>{ if(it.kind==='loose'){const x=ensureLooseDocs().find(v=>v.id===it.looseId);if(x&&x.sentReportId===report.id)x.sentReportId=null;return;} const r=getRecord(it.recordId);if(!r)return;const ids=new Set(it.receiptIds||[]);(r.receipts||[]).forEach(m=>{if((ids.size&&ids.has(m.id))||(!ids.size&&m.sentReportId===report.id)){if(m.sentReportId===report.id)m.sentReportId=null;}});const g=getGRTLedger(r.grt);if(it.includeGRT&&g&&g.sentReportId===report.id)g.sentReportId=null;if(r.liquidated){r.liquidated=false;r.liquidatedAt='';}recalc(r); });
+    const wanted=new Set(refs); const newItems=deepClone(oldItems.filter(it=>wanted.has(reportItemKey(it)))); newItems.forEach(it=>applyReportItem(it,report.id));
+    report.versions.forEach(v=>{if(v.status==='Vigente')v.status='Corregida';}); report.currentVersion+=1; report.date=draft.date; report.versions.push({version:report.currentVersion,at:nowIso(),user:state.currentUser,reason:reason.trim(),items:deepClone(newItems),status:'Vigente'});
+    const removed=oldKeys.filter(k=>!wanted.has(k)); removed.forEach(k=>{ if(k.startsWith('g:')){const r=getRecord(Number(k.slice(2)));if(!r)return;recalc(r);if(r.result==='Parcial')r.readyManual=true;} });
     saveState(); audit('Corrección de reporte Roche',`${report.cargo} · v${report.currentVersion} · ${reason.trim()}`); closeModal(); renderAll(); downloadReportXlsx(report); toast(`${report.cargo} corregido. Se mantiene el mismo correlativo.`);
   }
 
@@ -977,20 +1014,20 @@
     $$('[data-correct]').forEach(b=>b.onclick=()=>startCorrection(state.reports.find(x=>x.id===b.dataset.correct)));
   }
   function showHistoryDetail(r){
-    const d=$('#historyDetail'); d.classList.remove('hidden'); d.innerHTML=`<div class="section-head"><div><div class="eyebrow">${esc(r.cargo)}</div><h3>Historial de versiones</h3></div></div>${r.versions.slice().reverse().map(v=>`<div class="version-card"><div><b>Versión ${v.version}</b> <span class="status ${v.status==='Vigente'?'completo':'warning'}">${v.status}</span><br><small>${new Date(v.at).toLocaleString('es-PE')} · ${esc(v.user)} · ${esc(v.reason)}</small></div><div class="version-actions"><strong>${v.items.length} GR</strong><button class="btn small" data-version-view="${v.version}">Ver contenido</button><button class="btn small" data-version-download="${v.version}">Descargar Excel</button></div></div>`).join('')}`;
+    const d=$('#historyDetail'); d.classList.remove('hidden'); d.innerHTML=`<div class="section-head"><div><div class="eyebrow">${esc(r.cargo)}</div><h3>Historial de versiones</h3></div></div>${r.versions.slice().reverse().map(v=>`<div class="version-card"><div><b>Versión ${v.version}</b> <span class="status ${v.status==='Vigente'?'completo':'warning'}">${v.status}</span><br><small>${new Date(v.at).toLocaleString('es-PE')} · ${esc(v.user)} · ${esc(v.reason)}</small></div><div class="version-actions"><strong>${v.items.length} ítems</strong><button class="btn small" data-version-view="${v.version}">Ver contenido</button><button class="btn small" data-version-download="${v.version}">Descargar Excel</button></div></div>`).join('')}`;
     $$('[data-version-view]',d).forEach(b=>b.onclick=()=>showReportVersionPreview(r,getReportVersion(r,b.dataset.version)));
     $$('[data-version-download]',d).forEach(b=>b.onclick=()=>downloadReportXlsx(r,getReportVersion(r,b.dataset.version)));
   }
   function showReportVersionPreview(report,versionObj){
     if(!versionObj)return;
     const date=(versionObj.items[0]&&versionObj.items[0].deliveryDate)||report.date;
-    const rows=versionObj.items.map(it=>`<tr><td><b>${esc(it.gr)}</b></td><td>${esc(it.grt)}</td><td>${esc(it.order)}</td><td>${esc(it.type)}</td><td>${esc(it.resultAtSend||'—')}</td><td>${esc(it.obs||'—')}</td></tr>`).join('');
+    const rows=versionObj.items.map(it=>it.kind==='loose'?`<tr><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(it.obs||'—')}</td></tr>`:`<tr><td><b>${esc(it.gr)}</b></td><td>${esc(it.grt)}</td><td>${esc(it.order)}</td><td>${esc(it.type)}</td><td>${esc(it.resultAtSend||'—')}</td><td>${esc(it.obs||'—')}</td></tr>`).join('');
     const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(report.cargo)}</b></div><div><span>VERSIÓN</span><b>v${versionObj.version} · ${esc(versionObj.status)}</b></div><div><span>FECHA</span><b>${fmtDate(date)}</b></div></div><div class="callout">Vista histórica de solo lectura. Este contenido queda conservado aunque exista una versión corregida.</div><div class="table-wrap"><table><thead><tr><th>GR</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado al enviar</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody>${rows}</tbody></table></div><div class="modal-actions"><button class="btn" id="closeVersionPreview">Cerrar</button><button class="btn primary" id="downloadVersionPreview">Descargar esta versión</button></div>`;
     openModal(`Contenido ${report.cargo} · v${versionObj.version}`,`${new Date(versionObj.at).toLocaleString('es-PE')} · ${versionObj.user} · ${versionObj.reason}`,html,'report-modal');
     $('#closeVersionPreview').onclick=closeModal; $('#downloadVersionPreview').onclick=()=>downloadReportXlsx(report,versionObj);
   }
   function startCorrection(report){
-    const ids=currentReportItems(report).map(x=>x.recordId); const draft={ids,date:report.date,cargo:report.cargo}; showReportPreview(draft,true,report);
+    const draft={date:report.date,cargo:report.cargo}; showReportPreview(draft,true,report);
   }
 
   // ---------- Import / review ----------

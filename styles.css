@@ -61,3 +61,10 @@ h1,h2,h3,h4{margin:0 0 8px;line-height:1.15}.login-screen{display:grid;place-ite
 .danger-soft:hover{background:#fee2e2!important}
 .receipt-annulled{opacity:.65;background:#fff7f7}
 .receipt-annulled s{text-decoration-thickness:1.5px}
+
+
+/* V2.2 · documentación no asociada + observaciones legibles */
+.btn.accent{background:#fff3f3;border-color:#d62828;color:#b41414;font-weight:800}.btn.accent:hover{background:#ffe8e8}
+.loose-ready-row{background:#fffaf1}.loose-ready-row td{border-top:1px solid #f1d59c;border-bottom:1px solid #f1d59c}
+.loose-lines-head{display:flex;align-items:center;justify-content:space-between;margin:16px 0 8px}.loose-line{display:grid;grid-template-columns:minmax(220px,1fr) 110px 42px;gap:8px;margin:8px 0}.loose-line input{width:100%}.loose-modal .callout{margin-bottom:14px}
+.obs-link .obs-situation,.obs-link .obs-note{display:block;text-align:left;line-height:1.25}.obs-link .obs-note{margin-top:3px;font-weight:400}.follow-copy{display:grid;gap:5px}.follow-copy>div{line-height:1.35}

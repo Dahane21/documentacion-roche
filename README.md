@@ -1,13 +1,13 @@
-# Roche V2.1 Web
+# Roche V2.2 Web
 
-Actualización sobre la V2 Web Beta.
+Actualización sobre V2.1 sin modificar ni reiniciar la base de Supabase.
 
-## Cambio principal
-- En Detalle de guía > Historial de recepciones aparece **Anular recepción** para movimientos todavía no enviados a Roche.
-- Motivo obligatorio.
-- La recepción se conserva en historial como **Anulada**; no se borra silenciosamente.
-- El sistema recalcula documentación, Pendiente/Parcial/Completo, Docs por enviar y Listos para enviar.
-- Si la recepción ya fue incluida en un Cargo confirmado, el sistema bloquea la anulación y exige corregir primero el reporte.
-- Las guías ya liquidadas no se modifican.
+## Cambios
+- Documentación no asociada a GR/GRT/Pedido desde **Listos para enviar**.
+- Permite registrar múltiples documentos y cantidades (ej. `Acta + 2 Pecosas`).
+- Se incluye en el Cargo Roche con GR/GRT/Pedido vacíos y `Tipo = Otros`.
+- Queda en Historial Roche y puede retirarse mediante Corregir reporte.
+- Observaciones/seguimiento ahora muestran **Situación** y **Observación** separadas.
+- Conserva Anular recepción y toda la lógica anterior.
 
-La base compartida de Supabase se conserva: actualizar los archivos de GitHub Pages no borra ni reinicia los datos existentes.
+No requiere ejecutar SQL nuevo. Solo reemplazar los archivos web en GitHub Pages.

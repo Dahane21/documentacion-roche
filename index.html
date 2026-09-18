@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.1 Web · Tradel</title>
+  <title>Roche V2.2 Web · Tradel</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -29,7 +29,7 @@
     <aside class="sidebar">
       <div class="side-brand">
         <img src="logo_tradel.png" alt="Tradel Service" />
-        <div><strong>Roche V2.1 Web</strong><span>Seguimiento documental</span></div>
+        <div><strong>Roche V2.2 Web</strong><span>Seguimiento documental</span></div>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="quick">⚡ Registro rápido</button>
@@ -107,6 +107,7 @@
           <div class="field"><label>Cargo</label><input id="cargoNumber" placeholder="Ej. 300 o N0380" /><small class="field-help">El primero se indica manualmente; los siguientes avanzan en automático.</small></div>
           <div class="field fixed-value"><label>Para</label><strong>DIEGO</strong></div>
           <div class="spacer"></div>
+          <button id="addLooseDocsBtn" class="btn accent">+ Documentación no asociada</button>
           <button id="selectAllReadyBtn" class="btn">Seleccionar todos</button>
           <button id="clearReadyBtn" class="btn">Desmarcar</button>
           <button id="previewReportBtn" class="btn primary">Preparar vista previa</button>
@@ -136,7 +137,7 @@
       <section id="page-history" class="page hidden">
         <div class="table-wrap panel">
           <table>
-            <thead><tr><th>Cargo</th><th>Fecha entrega</th><th>Versión vigente</th><th>Guías</th><th>Confirmado por</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Cargo</th><th>Fecha entrega</th><th>Versión vigente</th><th>Ítems</th><th>Confirmado por</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody id="historyTableBody"></tbody>
           </table>
         </div>
