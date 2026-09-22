@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.4-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
+      version:'2.2.6-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.4-web';
+      state.version='2.2.6-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.4-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.6-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.4-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.6-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,14 +330,14 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.4-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.6-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
   function openPage(page){
     $$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
     $$('.page').forEach(p=>p.classList.add('hidden')); $('#page-'+page).classList.remove('hidden');
-    const titles={quick:'Registro rápido',pending:'Pendientes / Parciales',ready:'Listos para enviar',general:'Reporte general',history:'Historial Roche',closed:'Liquidados',import:'Importar data'};
+    const titles={quick:'Registro rápido',pending:'Pendientes / Parciales',ready:'Listos para enviar',indicators:'Indicadores documentarios',general:'Reporte general',history:'Historial Roche',closed:'Liquidados',import:'Importar data'};
     $('#pageTitle').textContent=titles[page]||''; renderAll(); refreshRemoteIfNewer();
   }
   function showApp(){
@@ -456,7 +456,9 @@
       if(!data || docCount(data.docs)===0 && !data.stateOnly){ toast('Marca al menos un documento o estado recibido',true); return; }
       r.type=selectedType;
       if(data.facturaState) r.facturaState=data.facturaState;
+      else if(!r.facturaState) r.facturaState='No aplica';
       if(data.ocState) r.ocState=data.ocState;
+      else if(!r.ocState) r.ocState='No aplica';
       if(data.docs.grt){ setGRTReceived(r.grt); data.docs.grt=0; }
       if(docCount(data.docs)>0) r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs:data.docs,sentReportId:null,facturaStateChange:data.facturaState||'',ocStateChange:data.ocState||'',annulled:false});
       r.audit.push({at:nowIso(),user:state.currentUser,action:mode==='add'?'Nueva recepción':'Registro rápido',detail:docsTextFromRaw(data.docs)});
@@ -474,11 +476,11 @@
     if(type==='Venta') return `
       <div class="doc-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':''}><span>GRT</span><small>${grtAlready?'Ya recibida':'Marcar si llegó'}</small></label><label class="check-card"><input id="docGR" type="checkbox"><span>GR</span><small>Guía recibida</small></label></div>
       <button type="button" class="btn primary mark-both" id="markBoth">MARCAR AMBOS · GRT + GR</button>
-      <div class="state-grid"><div class="field state-field"><label>Factura</label><small>Estado acumulado: <b>${esc(r.facturaState||'Sin definir')}</b></small><select id="factState"><option value="">Sin cambios</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div><div class="field state-field"><label>OC</label><small>Estado acumulado: <b>${esc(r.ocState||'Sin definir')}</b></small><select id="ocState"><option value="">Sin cambios</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div></div>${extra}`;
+      <div class="state-grid"><div class="field state-field"><label>Factura</label><small>Estado acumulado: <b>${esc(r.facturaState||'Sin definir')}</b></small><select id="factState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div><div class="field state-field"><label>OC</label><small>Estado acumulado: <b>${esc(r.ocState||'Sin definir')}</b></small><select id="ocState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div></div>${extra}`;
     if(type==='Venta CENARES') return `
       <div class="doc-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':''}><span>GRT</span><small>${grtAlready?'Ya recibida':'Marcar si llegó'}</small></label></div>
       <div class="cenares-grid"><div class="count-box"><span>GR esperadas</span><b>4</b><label>Recibidas <input id="cntGR" type="number" min="0" max="4" value="0"></label></div><div class="count-box"><span>Actas esperadas</span><b>4</b><label>Recibidas <input id="cntActas" type="number" min="0" max="4" value="0"></label></div><div class="count-box"><span>Pecosas esperadas</span><b>4</b><label>Recibidas <input id="cntPecosas" type="number" min="0" max="4" value="0"></label></div></div>
-      <div class="state-grid"><div class="field state-field"><label>Factura</label><small>Estado acumulado: <b>${esc(r.facturaState||'Sin definir')}</b></small><select id="factState"><option value="">Sin cambios</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div><div class="field state-field"><label>OC</label><small>Estado acumulado: <b>${esc(r.ocState||'Sin definir')}</b></small><select id="ocState"><option value="">Sin cambios</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div></div>${extra}`;
+      <div class="state-grid"><div class="field state-field"><label>Factura</label><small>Estado acumulado: <b>${esc(r.facturaState||'Sin definir')}</b></small><select id="factState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div><div class="field state-field"><label>OC</label><small>Estado acumulado: <b>${esc(r.ocState||'Sin definir')}</b></small><select id="ocState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div></div>${extra}`;
     return extra;
   }
   function wireExtraAdd(root){
@@ -510,9 +512,10 @@
     $('#pkgSelectAll').onchange=e=>$$('.pkgSelect',$('#modalBody')).forEach(c=>c.checked=e.target.checked);
     $$('.type-btn',$('#modalBody')).forEach(btn=>btn.onclick=()=>{
       const sel=$$('.pkgSelect:checked',$('#modalBody')); if(!sel.length){toast('Selecciona primero una o más GR',true);return;}
-      sel.forEach(c=>{ const tr=c.closest('tr'), r=getRecord(tr.dataset.pkgRow); r._pkgType=btn.dataset.type; $('.pkgType',tr).innerHTML=`<span class="type-pill">${esc(btn.dataset.type)}</span>`; $('.pkgDocs',tr).innerHTML=packageMiniDocs(r,btn.dataset.type); wirePackageExtra($('.pkgDocs',tr)); c.checked=false; });
+      sel.forEach(c=>{ const tr=c.closest('tr'), r=getRecord(tr.dataset.pkgRow); r._pkgType=btn.dataset.type; $('.pkgType',tr).innerHTML=`<span class="type-pill">${esc(btn.dataset.type)}</span>`; $('.pkgDocs',tr).innerHTML=packageMiniDocs(r,btn.dataset.type); $('.pkgArrived',tr).closest('td').classList.toggle('cen-no-checkbox',btn.dataset.type==='Venta CENARES'); if(btn.dataset.type==='Venta CENARES') $('.pkgArrived',tr).checked=false; wirePackageExtra($('.pkgDocs',tr)); c.checked=false; });
       $('#pkgSelectAll').checked=false;
     });
+    $$('[data-pkg-row]',$('#modalBody')).forEach(tr=>{const r=getRecord(tr.dataset.pkgRow); $('.pkgArrived',tr).closest('td').classList.toggle('cen-no-checkbox',(r._pkgType||r.type)==='Venta CENARES');});
     $$('.pkgDocs',$('#modalBody')).forEach(wirePackageExtra);
     $('#cancelPkg').onclick=()=>{ group.forEach(r=>delete r._pkgType); closeModal(); };
     $('#savePkg').onclick=()=>savePackage(group,base);
@@ -547,10 +550,18 @@
   function wirePackageExtra(root){
     const btn=$('.pkgAddExtra',root); if(!btn || btn.dataset.wired)return; btn.dataset.wired='1'; btn.onclick=()=>{ const input=$('.pkgExtraInput',root), tags=$('.pkgExtraTags',root), v=input.value.trim(); if(!v)return; const s=document.createElement('span'); s.className='extra-tag small'; s.dataset.value=v; s.innerHTML=`${esc(v)} <button type="button">×</button>`; $('button',s).onclick=()=>s.remove(); tags.appendChild(s); input.value=''; };
   }
+  function packageRowArrived(tr){
+    const r=getRecord(tr.dataset.pkgRow), type=r._pkgType||r.type;
+    if(type!=='Venta CENARES') return $('.pkgArrived',tr).checked;
+    const area=$('.pkgDocs',tr);
+    return ['.pkgCntGR','.pkgCntAct','.pkgCntPec'].some(k=>Number($(k,area)?.value||0)>0)
+      || ['.pkgFact','.pkgOC'].some(k=>['Recibido','Pendiente'].includes($(k,area)?.value||''))
+      || $$('.extra-tag',area).length>0;
+  }
   function savePackage(group,base){
-    const rows=$$('[data-pkg-row]',$('#modalBody')); const arrivedRows=rows.filter(tr=>$('.pkgArrived',tr).checked);
+    const rows=$$('[data-pkg-row]',$('#modalBody')); const arrivedRows=rows.filter(packageRowArrived);
     if(!arrivedRows.length && !$('#pkgGRT').checked){ toast('No has marcado ninguna GR recibida',true); return; }
-    const missing=rows.filter(tr=>!$('.pkgArrived',tr).checked).map(tr=>getRecord(tr.dataset.pkgRow).gr);
+    const missing=rows.filter(tr=>!packageRowArrived(tr)).map(tr=>getRecord(tr.dataset.pkgRow).gr);
     if(missing.length){
       const msg=`Paquete incompleto: ${arrivedRows.length} de ${rows.length} GR registradas.\n\nFaltan:\n${missing.join('\n')}\n\nPuedes guardar de todos modos.`;
       if(!confirm(msg)) return;
@@ -561,7 +572,7 @@
     if(sharedGRTNew) setGRTReceived(base.grt);
     let grtAssigned=false;
     rows.forEach(tr=>{
-      const r=getRecord(tr.dataset.pkgRow); const arrived=$('.pkgArrived',tr).checked; const type=r._pkgType || r.type;
+      const r=getRecord(tr.dataset.pkgRow); const arrived=packageRowArrived(tr); const type=r._pkgType || r.type;
       if(type) r.type=type;
       if(!arrived){ recalc(r); delete r._pkgType; return; }
       const docs={grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]};
@@ -569,7 +580,7 @@
       const area=$('.pkgDocs',tr);
       if(type==='Venta CENARES') docs.grCopies=Math.max(0,Math.min(4,Number($('.pkgCntGR',area)?.value||0))); else docs.gr=1;
       if(type==='Venta CENARES'){ docs.actas=Math.max(0,Math.min(4,Number($('.pkgCntAct',area)?.value||0))); docs.pecosas=Math.max(0,Math.min(4,Number($('.pkgCntPec',area)?.value||0))); }
-      const fs=$('.pkgFact',area)?.value||'', os=$('.pkgOC',area)?.value||''; if(fs==='Recibido')docs.factura=1; if(os==='Recibido')docs.oc=1; if(fs)r.facturaState=fs; if(os)r.ocState=os;
+      const fs=$('.pkgFact',area)?.value||'', os=$('.pkgOC',area)?.value||''; if(fs==='Recibido')docs.factura=1; if(os==='Recibido')docs.oc=1; if(fs)r.facturaState=fs; else if(!r.facturaState)r.facturaState='No aplica'; if(os)r.ocState=os; else if(!r.ocState)r.ocState='No aplica';
       $$('.extra-tag',area).forEach(x=>docs.extras.push(x.dataset.value));
       r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs,sentReportId:null,facturaStateChange:fs||'',ocStateChange:os||'',annulled:false});
       r.audit.push({at:nowIso(),user:state.currentUser,action:'Registro de paquete',detail:docsTextFromRaw(docs)}); recalc(r); delete r._pkgType;
@@ -602,6 +613,24 @@
     };
   }
 
+  // Date tree: filters are in-memory UI state; no modification of shared records.
+  function normalDate(value){ const s=String(value||'').slice(0,10); if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s; const m=String(value||'').match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);return m?`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:''; }
+  const selectedDates=new Set(), pendingDateDraft=new Set();
+  function availableGuideDates(){return [...new Set(allOperational().map(r=>normalDate(r.guideDate)).filter(Boolean))].sort().reverse();}
+  function updateDateButton(){ const b=$('#dateFilterBtn');if(b)b.textContent=selectedDates.size?`${selectedDates.size} días seleccionados`:'Todas las fechas'; }
+  function renderDateFilterOptions(){
+    const root=$('#dateFilterOptions');if(!root)return;
+    const groups={};availableGuideDates().forEach(date=>{const [y,m]=date.split('-');(((groups[y]??={})[m]??=[])).push(date);});
+    const months=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    root.innerHTML=Object.keys(groups).sort().reverse().map(y=>`<details><summary><label><input type="checkbox" data-date-group="${y}" ${Object.values(groups[y]).flat().every(d=>pendingDateDraft.has(d))?'checked':''}> ${y}</label></summary>${Object.keys(groups[y]).sort().reverse().map(m=>`<details class="date-month"><summary><label><input type="checkbox" data-date-group="${y}-${m}" ${groups[y][m].every(d=>pendingDateDraft.has(d))?'checked':''}> ${months[Number(m)]}</label></summary><div class="date-day-grid">${groups[y][m].map(d=>`<label><input type="checkbox" data-date-day="${d}" ${pendingDateDraft.has(d)?'checked':''}> ${Number(d.slice(-2))}</label>`).join('')}</div></details>`).join('')}</details>`).join('')||'<p>No hay fechas de emisión disponibles.</p>';
+  }
+  $('#dateFilterBtn').onclick=e=>{e.stopPropagation();pendingDateDraft.clear();selectedDates.forEach(d=>pendingDateDraft.add(d));renderDateFilterOptions();$('#dateFilterMenu').classList.toggle('hidden');};
+  $('#dateFilterOptions').addEventListener('click',e=>{if(e.target.closest('label'))e.stopPropagation();});
+  $('#dateFilterOptions').addEventListener('change',e=>{const el=e.target;if(el.dataset.dateDay){el.checked?pendingDateDraft.add(el.dataset.dateDay):pendingDateDraft.delete(el.dataset.dateDay);}else if(el.dataset.dateGroup){availableGuideDates().filter(d=>d.startsWith(el.dataset.dateGroup)).forEach(d=>el.checked?pendingDateDraft.add(d):pendingDateDraft.delete(d));}const expanded=[...$('#dateFilterOptions').querySelectorAll('details[open]')].map(x=>[...$('#dateFilterOptions').querySelectorAll('details')].indexOf(x));renderDateFilterOptions();const details=$$('#dateFilterOptions details');expanded.forEach(i=>{if(details[i])details[i].open=true;});});
+  $('#dateSelectAll').onclick=()=>{pendingDateDraft.clear();availableGuideDates().forEach(d=>pendingDateDraft.add(d));renderDateFilterOptions();};
+  $('#dateClear').onclick=()=>{pendingDateDraft.clear();selectedDates.clear();renderDateFilterOptions();updateDateButton();renderPending();};
+  $('#dateApply').onclick=()=>{selectedDates.clear();pendingDateDraft.forEach(d=>selectedDates.add(d));updateDateButton();$('#dateFilterMenu').classList.add('hidden');renderPending();};
+  document.addEventListener('click',e=>{if(!$('#dateMulti')?.contains(e.target))$('#dateFilterMenu')?.classList.add('hidden');});
   // ---------- Pending ----------
   let pendingMode='';
   const selectedDistricts=new Set();
@@ -619,9 +648,10 @@
     box.innerHTML=rows.length?rows.map(x=>`<label class="multi-select-option"><input type="checkbox" value="${esc(x)}" ${selectedDistricts.has(x)?'checked':''}><span>${esc(x)}</span></label>`).join(''):'<div class="multi-select-empty">No se encontraron distritos.</div>';
     updateDistrictFilterButton();
   }
-  $$('.stat-filter').forEach(b=>b.onclick=()=>{ pendingMode=b.dataset.pendingFilter; renderPending(); });
+  $$('.stat-filter').forEach(b=>b.onclick=()=>{ pendingMode=b.dataset.pendingFilter; $('#statusFilter').value=''; renderPending(); });
   $('#partialAlert').onclick=()=>{ pendingMode='partial'; $('#statusFilter').value='Parcial'; renderPending(); };
-  ['pendingSearch','recipientFilter','statusFilter','unsentFilter'].forEach(id=>$('#'+id).addEventListener('input',renderPending));
+  ['pendingSearch','recipientFilter','unsentFilter'].forEach(id=>$('#'+id).addEventListener('input',renderPending));
+  $('#statusFilter').addEventListener('change',()=>{pendingMode='';renderPending();});
   $('#districtFilterBtn').onclick=e=>{
     e.stopPropagation(); const menu=$('#districtFilterMenu'); menu.classList.toggle('hidden');
     if(!menu.classList.contains('hidden')){ renderDistrictFilterOptions(); setTimeout(()=>$('#districtFilterSearch')?.focus(),0); }
@@ -633,7 +663,7 @@
     updateDistrictFilterButton(); renderPending();
   });
   document.addEventListener('click',e=>{ if(!$('#districtMulti')?.contains(e.target)) $('#districtFilterMenu')?.classList.add('hidden'); });
-  $('#clearPendingFilters').onclick=()=>{ pendingMode=''; selectedDistricts.clear(); $('#pendingSearch').value=''; $('#recipientFilter').value=''; $('#districtFilterSearch').value=''; $('#statusFilter').value=''; $('#unsentFilter').value=''; $('#districtFilterMenu').classList.add('hidden'); updateDistrictFilterButton(); renderPending(); };
+  $('#clearPendingFilters').onclick=()=>{ selectedDates.clear(); pendingDateDraft.clear(); renderDateFilterOptions(); updateDateButton(); pendingMode=''; selectedDistricts.clear(); $('#pendingSearch').value=''; $('#recipientFilter').value=''; $('#districtFilterSearch').value=''; $('#statusFilter').value=''; $('#unsentFilter').value=''; $('#districtFilterMenu').classList.add('hidden'); updateDistrictFilterButton(); renderPending(); };
   function renderPending(){
     recalcAll(); const active=allOperational().filter(r=>!r.liquidated && ['Pendiente','Parcial'].includes(r.result));
     $('#statPending').textContent=active.filter(r=>r.result==='Pendiente').length;
@@ -650,7 +680,7 @@
     let rows=active.filter(r=>{
       if(q && ![r.gr,r.grt,r.order].join(' ').toLowerCase().includes(q)) return false;
       if(recq && !String(r.recipient||'').toLowerCase().includes(recq)) return false;
-      if(selectedDistricts.size&&!selectedDistricts.has(r.district))return false; if(st&&r.result!==st)return false; if(uns==='yes'&&!hasUnsent(r))return false; if(uns==='no'&&hasUnsent(r))return false;
+      if(selectedDistricts.size&&!selectedDistricts.has(r.district))return false; if(selectedDates.size&&!selectedDates.has(normalDate(r.guideDate)))return false; if(st&&r.result!==st)return false; if(uns==='yes'&&!hasUnsent(r))return false; if(uns==='no'&&hasUnsent(r))return false;
       if(pendingMode==='pending'&&r.result!=='Pendiente')return false; if(pendingMode==='partial'&&r.result!=='Parcial')return false; if(pendingMode==='decide'&&!(r.result==='Parcial'&&hasUnsent(r)&&!r.readyManual))return false; if(pendingMode==='untyped'&&r.type)return false; return true;
     });
     $('#pendingTableBody').innerHTML=rows.slice(0,300).map(r=>`<tr><td>${fmtDate(r.guideDate)}</td><td>${esc(r.district)}</td><td>${esc(r.grt)}</td><td><b>${esc(r.gr)}</b></td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td class="address-cell">${esc(r.address||'—')}</td><td>${r.type?`<span class="type-pill">${esc(r.type)}</span>`:'<span class="status warning">Sin tipificar</span>'}</td><td><span class="status ${r.result.toLowerCase()}">${esc(r.result)}</span></td><td>${esc(docsText(r,false))}</td><td>${hasUnsent(r)?'<span class="yes-pill">Sí</span>':'No'}</td><td class="obs-cell-wrap">${followUpCell(r)}</td><td class="actions-cell"><button class="btn small" data-add="${r.id}">Agregar docs</button>${r.result==='Parcial'&&hasUnsent(r)&&!r.readyManual?`<button class="btn small primary" data-ready="${r.id}">Enviar parcial</button>`:''}${r.result==='Parcial'?`<button class="btn small" data-complete="${r.id}">Completar</button>`:''}<button class="icon-btn" data-view="${r.id}">🔍</button></td></tr>`).join('') || '<tr><td colspan="13" class="empty-row">No hay registros con estos filtros.</td></tr>';
@@ -1216,7 +1246,40 @@
     $('#pendingBadge').textContent=active.length; $('#readyBadge').textContent=allOperational().filter(isReady).length; $('#reviewBadge').textContent=state.review.filter(x=>!x.reviewResolved).length;
     $('#partialSidebarBadge').textContent=partialCount; $('#partialSidebarBadge').classList.toggle('hidden',partialCount===0);
   }
-  function renderAll(){ renderBadges(); renderPending(); renderReady(); renderGeneral(); renderClosed(); renderHistory(); renderImport(); requestAnimationFrame(updateFloatingHScroll); }
+  // ---------- Indicators: read-only, derived from saved guides, receipts and reports ----------
+  let indicatorDrill='all', indicatorDrillZone='';
+  function indicatorReportDates(r){
+    const ids=new Set((r.receipts||[]).filter(x=>!x.annulled&&x.sentReportId).map(x=>x.sentReportId));
+    return (state.reports||[]).filter(p=>ids.has(p.id)||currentReportItems(p).some(it=>it.recordId===r.id)).map(p=>({date:normalDate(p.date),cargo:p.cargo})).filter(x=>x.date);
+  }
+  function periodIncludes(d){if(!d)return false;const f=$('#indicatorFrom').value,t=$('#indicatorTo').value;return (!f||d>=f)&&(!t||d<=t);}
+  function indicatorRecords(){const z=$('#indicatorZone').value;return allOperational().filter(r=>(!z||String(r.district||'')===z)&&periodIncludes(normalDate(r.guideDate)));}
+  function guideMetrics(r){const receipts=(r.receipts||[]).filter(x=>!x.annulled),sent=indicatorReportDates(r);const first=receipts.map(x=>normalDate(x.at||x.receivedAt)).filter(Boolean).sort()[0]||'';const issue=normalDate(r.guideDate);const liquid=normalDate(r.liquidatedAt);const age=issue?Math.max(0,Math.floor((Date.now()-new Date(issue+'T12:00:00').getTime())/86400000)):null;const timeToClose=issue&&liquid?Math.round((new Date(liquid+'T12:00:00')-new Date(issue+'T12:00:00'))/86400000):null;const unsent=hasUnsent(r);const receiptToSend=first&&sent.length?Math.round((new Date(sent.map(x=>x.date).sort()[0]+'T12:00:00')-new Date(first+'T12:00:00'))/86400000):null;return {r,receipts,sent,first,issue,liquid,age,timeToClose,receiptToSend,unsent};}
+  function avg(values){const a=values.filter(v=>Number.isFinite(v)&&v>=0);return a.length?(a.reduce((s,v)=>s+v,0)/a.length).toFixed(1):'—';}
+  function renderIndicators(){if(!$('#indicatorCards'))return;
+    const zone=$('#indicatorZone'), old=zone.value;const zones=[...new Set(allOperational().map(r=>String(r.district||'').trim()).filter(Boolean))].sort();zone.innerHTML='<option value="">Todas las zonas</option>'+zones.map(z=>`<option value="${esc(z)}">${esc(z)}</option>`).join('');zone.value=zones.includes(old)?old:'';
+    const view=$('#indicatorView').value, issued=view==='issued', all=allOperational().map(guideMetrics), rows=issued?indicatorRecords().map(guideMetrics):all.filter(m=>m.receipts.some(x=>periodIncludes(normalDate(x.at||x.receivedAt)))||m.sent.some(x=>periodIncludes(x.date))).filter(m=>!zone.value||m.r.district===zone.value);
+    const inPeriod= m=>m.receipts.some(x=>periodIncludes(normalDate(x.at||x.receivedAt)));
+    const deliveries=m=>m.sent.some(x=>periodIncludes(x.date));
+    const counts=issued?[['Guías emitidas',rows.length,'all'],['Liquidadas',rows.filter(m=>m.r.liquidated).length,'closed'],['Pendientes',rows.filter(m=>m.r.result==='Pendiente'&&!m.r.liquidated).length,'pending'],['Parciales',rows.filter(m=>m.r.result==='Parcial'&&!m.r.liquidated).length,'partial'],['Con docs recibidos en Lima',rows.filter(m=>m.receipts.length).length,'received'],['Sin docs recibidos',rows.filter(m=>!m.receipts.length).length,'without'],['Sin liquidar ≥15 días',rows.filter(m=>!m.r.liquidated&&m.age!==null&&m.age>=15).length,'late'],['Docs en Lima pendientes de envío',rows.filter(m=>m.unsent).length,'unsent'],['Promedio emisión → liquidación (días)',avg(rows.filter(m=>m.r.liquidated).map(m=>m.timeToClose)),'closed'],['Promedio recepción → envío (días)',avg(rows.map(m=>m.receiptToSend)),'sent']]:[['Guías con recepción registrada',rows.filter(inPeriod).length,'received'],['Recepciones registradas',rows.reduce((n,m)=>n+m.receipts.filter(x=>periodIncludes(normalDate(x.at||x.receivedAt))).length,0),'received'],['Guías incluidas en cargos',rows.filter(deliveries).length,'sent'],['Cargos generados',state.reports.filter(p=>periodIncludes(normalDate(p.date))&&(!zone.value||currentReportItems(p).some(it=>{const r=getRecord(it.recordId);return r&&r.district===zone.value;}))).length,'sent'],['Recepciones anuladas',rows.reduce((n,m)=>n+(m.r.receipts||[]).filter(x=>x.annulled&&periodIncludes(normalDate(x.annulledAt||x.at))).length,0),'all']];
+    $('#indicatorHelp').textContent=issued?'Cohorte según fecha de emisión de la GR. Los estados corresponden a la situación actual; la antigüedad se cuenta desde emisión.':'Actividad registrada en el periodo, incluso de GR emitidas en meses anteriores. Las recepciones y los envíos se cuentan por sus propias fechas.';
+    $('#indicatorCards').innerHTML=counts.map(([label,value,key])=>`<button class="indicator-card ${indicatorDrill===key?'selected':''}" data-ind-drill="${key}"><span>${esc(label)}</span><strong>${esc(value)}</strong></button>`).join('');
+    const zoneMap=new Map();rows.forEach(m=>{const z=String(m.r.district||'Sin zona');if(!zoneMap.has(z))zoneMap.set(z,[]);zoneMap.get(z).push(m);});
+    $('#indicatorZoneHead').innerHTML=issued?'<tr><th>Zona (ubigeo Roche)</th><th>Guías</th><th>Liquidadas</th><th>Pendientes</th><th>Parciales</th><th>Sin liquidar ≥15 días</th><th>Docs por enviar</th></tr>':'<tr><th>Zona (ubigeo Roche)</th><th>GR con recepción</th><th>Recepciones</th><th>GR enviadas</th></tr>';
+    $('#indicatorZoneBody').innerHTML=[...zoneMap].sort((a,b)=>a[0].localeCompare(b[0])).map(([z,ms])=>issued?`<tr data-ind-zone="${esc(z)}"><td><button class="btn small">${esc(z)}</button></td><td>${ms.length}</td><td>${ms.filter(m=>m.r.liquidated).length}</td><td>${ms.filter(m=>m.r.result==='Pendiente'&&!m.r.liquidated).length}</td><td>${ms.filter(m=>m.r.result==='Parcial'&&!m.r.liquidated).length}</td><td>${ms.filter(m=>!m.r.liquidated&&m.age!==null&&m.age>=15).length}</td><td>${ms.filter(m=>m.unsent).length}</td></tr>`:`<tr data-ind-zone="${esc(z)}"><td><button class="btn small">${esc(z)}</button></td><td>${ms.filter(inPeriod).length}</td><td>${ms.reduce((n,m)=>n+m.receipts.filter(x=>periodIncludes(normalDate(x.at||x.receivedAt))).length,0)}</td><td>${ms.filter(deliveries).length}</td></tr>`).join('')||'<tr><td colspan="7">Sin datos para el periodo seleccionado.</td></tr>';
+    const byKey=m=>({all:true,closed:m.r.liquidated,pending:m.r.result==='Pendiente'&&!m.r.liquidated,partial:m.r.result==='Parcial'&&!m.r.liquidated,received:issued?m.receipts.length>0:inPeriod(m),without:m.receipts.length===0,late:!m.r.liquidated&&m.age!==null&&m.age>=15,unsent:m.unsent,sent:deliveries(m)})[indicatorDrill]??true;
+    const detail=rows.filter(m=>byKey(m)&&(!indicatorDrillZone||m.r.district===indicatorDrillZone));
+    $('#indicatorDetailTitle').textContent=`Detalle de GR (${detail.length})${indicatorDrillZone?' · '+indicatorDrillZone:''}`;
+    $('#indicatorDetailHead').innerHTML='<tr><th>Fecha emisión</th><th>Zona</th><th>GR Roche</th><th>GRT</th><th>Destinatario</th><th>Resultado</th><th>Recepción Lima</th><th>Último envío</th><th>Días sin liquidar</th><th>Docs por enviar</th></tr>';
+    $('#indicatorDetailBody').innerHTML=detail.map(m=>`<tr><td>${esc(fmtDate(m.issue))}</td><td>${esc(m.r.district)}</td><td>${esc(m.r.gr)}</td><td>${esc(m.r.grt)}</td><td>${esc(m.r.recipient)}</td><td>${esc(m.r.liquidated?'Liquidada':m.r.result)}</td><td>${esc(fmtDate(m.first))}</td><td>${esc(fmtDate(m.sent.map(x=>x.date).sort().at(-1)))}</td><td>${m.r.liquidated?'—':(m.age??'Sin fecha')}</td><td>${m.unsent?'Sí':'No'}</td></tr>`).join('')||'<tr><td colspan="10">Sin guías para este indicador.</td></tr>';
+    $$('#indicatorCards [data-ind-drill]').forEach(b=>b.onclick=()=>{indicatorDrill=b.dataset.indDrill;indicatorDrillZone='';renderIndicators();});
+    $$('#indicatorZoneBody [data-ind-zone]').forEach(tr=>tr.onclick=()=>{indicatorDrillZone=tr.dataset.indZone===indicatorDrillZone?'':tr.dataset.indZone;indicatorDrill='all';renderIndicators();});
+    window.__rocheIndicatorExport={counts,rows:detail,view,zone:zone.value};
+  }
+  ['indicatorView','indicatorFrom','indicatorTo','indicatorZone'].forEach(id=>$('#'+id).addEventListener('change',()=>{indicatorDrill='all';indicatorDrillZone='';renderIndicators();}));
+  $('#indicatorReset').onclick=()=>{$('#indicatorFrom').value='';$('#indicatorTo').value='';$('#indicatorZone').value='';indicatorDrill='all';indicatorDrillZone='';renderIndicators();};
+  $('#indicatorExport').onclick=()=>{if(typeof XLSX==='undefined'){toast('No se pudo cargar el módulo Excel.',true);return;}const data=window.__rocheIndicatorExport;const summary=data.counts.map(([indicador,valor])=>({Indicador:indicador,Valor:valor}));const detail=data.rows.map(m=>({'Fecha emisión':m.issue,'Ubigeo / zona Roche':m.r.district,'GR Roche':m.r.gr,'GRT':m.r.grt,'Destinatario':m.r.recipient,'Estado':m.r.liquidated?'Liquidada':m.r.result,'Primera recepción Lima':m.first,'Último envío Signia':m.sent.map(x=>x.date).sort().at(-1)||'','Días sin liquidar':m.r.liquidated?'':m.age??'','Docs pendientes de envío':m.unsent?'Sí':'No'}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'RESUMEN');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(detail.length?detail:[{'GR Roche':'Sin registros'}]),'DETALLE GR');XLSX.writeFile(wb,'ROCHE_INDICADORES_'+new Date().toISOString().slice(0,10)+'.xlsx');};
+  function renderAll(){ renderBadges(); renderPending(); renderReady(); renderGeneral(); renderClosed(); renderHistory(); renderImport(); renderIndicators(); requestAnimationFrame(updateFloatingHScroll); }
 
   async function initWebApp(){
     $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden');

@@ -1,10 +1,4 @@
-ROCHE V2.2.4 WEB
-
-Cambios:
-- Corrige la vista previa y confirmación de reportes para GR importadas con ID de texto.
-- Las guías Parciales marcadas manualmente como Completo, con documentos pendientes de enviar, pasan a Listos y pueden enviarse.
-- Bloquea la confirmación si algún ítem seleccionado no pudo vincularse, evitando reportes incompletos silenciosos.
-- Historial Roche permite Ver contenido directamente y conserva Versiones por separado.
-- Mantiene documentación no asociada y anulación de recepciones no enviadas.
-
-No requiere cambios SQL. Usa la misma base Supabase y conserva la data existente.
+ROCHE V2.2.6 WEB
+Actualización sobre V2.2.5: filtro de fecha de emisión por año/mes/día en pendientes; corrección del selector Todos; indicadores por zona Roche con vistas cohorte y actividad, detalle de guías y exportación Excel. Conserva mejoras V2.2.5 de Factura/OC y Venta CENARES.
+ANTES DE ACTUALIZAR: exportar respaldo; subir los archivos del directorio a la raíz de GitHub; verificar historial y sincronización. No ejecutar SQL ni restaurar JSON por actualizar.
+LIMITACIÓN: indicadores por zona se basan en campo district de las guías importadas; validar correspondencia con ubigeo Roche. Actividad se basa en fechas de recepciones y cargo. Sin asignación a representantes.

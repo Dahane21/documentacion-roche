@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.4 Web · Tradel</title>
+  <title>Roche V2.2.6 Web · Tradel</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -29,12 +29,13 @@
     <aside class="sidebar">
       <div class="side-brand">
         <img src="logo_tradel.png" alt="Tradel Service" />
-        <div><strong>Roche V2.2.4 Web</strong><span>Seguimiento documental</span></div>
+        <div><strong>Roche V2.2.6 Web</strong><span>Seguimiento documental</span></div>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="quick">⚡ Registro rápido</button>
         <button class="nav-btn" data-page="pending">Pendientes / Parciales <span id="pendingBadge" class="badge">0</span><span id="partialSidebarBadge" class="badge partial-nav-badge hidden" title="Guías parciales activas">0</span></button>
         <button class="nav-btn" data-page="ready">Listos para enviar <span id="readyBadge" class="badge">0</span></button>
+        <button class="nav-btn" data-page="indicators">Indicadores documentarios</button>
         <button class="nav-btn" data-page="general">Reporte general</button>
         <button class="nav-btn" data-page="history">Historial Roche</button>
         <button class="nav-btn" data-page="closed">Liquidados</button>
@@ -91,6 +92,7 @@
           <div class="field district-field"><label>Distrito</label><div class="multi-select" id="districtMulti"><button id="districtFilterBtn" class="multi-select-btn" type="button">Todos</button><div id="districtFilterMenu" class="multi-select-menu hidden"><input id="districtFilterSearch" class="multi-select-search" placeholder="Buscar distrito…" autocomplete="off"><div id="districtFilterOptions" class="multi-select-options"></div></div></div></div>
           <div class="field"><label>Resultado</label><select id="statusFilter"><option value="">Todos</option><option>Pendiente</option><option>Parcial</option></select></div>
           <div class="field"><label>Docs por enviar</label><select id="unsentFilter"><option value="">Todos</option><option value="yes">Sí</option><option value="no">No</option></select></div>
+          <div class="field date-tree-field"><label>Fecha de emisión · GR Roche</label><div class="multi-select" id="dateMulti"><button id="dateFilterBtn" class="multi-select-btn" type="button">Todas las fechas</button><div id="dateFilterMenu" class="multi-select-menu hidden"><div class="date-tree-head"><button class="btn small" type="button" id="dateSelectAll">Seleccionar todo</button><button class="btn small" type="button" id="dateClear">Limpiar fechas</button></div><div id="dateFilterOptions" class="date-tree-options"></div><button class="btn small primary" type="button" id="dateApply">Aplicar</button></div></div></div>
           <button id="clearPendingFilters" class="btn">Limpiar</button>
         </div>
         <div class="table-wrap panel">
@@ -119,6 +121,13 @@
             <tbody id="readyTableBody"></tbody>
           </table>
         </div>
+      </section>
+
+      <section id="page-indicators" class="page hidden">
+        <div class="panel indicator-controls"><div class="field"><label>Vista del informe</label><select id="indicatorView"><option value="issued">Guías emitidas en el periodo</option><option value="activity">Actividad realizada en el periodo</option></select></div><div class="field"><label>Desde</label><input type="date" id="indicatorFrom"></div><div class="field"><label>Hasta</label><input type="date" id="indicatorTo"></div><div class="field"><label>Zona · Ubigeo Roche</label><select id="indicatorZone"><option value="">Todas las zonas</option></select></div><button class="btn" id="indicatorReset">Todos los periodos</button><button class="btn primary" id="indicatorExport">Exportar Excel</button></div>
+        <div class="panel"><p id="indicatorHelp" class="muted"></p><div id="indicatorCards" class="indicator-cards"></div></div>
+        <div class="panel"><h3>Resultados por zona</h3><div class="table-wrap"><table><thead id="indicatorZoneHead"></thead><tbody id="indicatorZoneBody"></tbody></table></div></div>
+        <div class="panel"><h3 id="indicatorDetailTitle">Detalle de guías</h3><p class="muted">Selecciona una tarjeta o una zona para consultar sus guías. Los indicadores por zona no atribuyen resultados a representantes individuales.</p><div class="table-wrap"><table><thead id="indicatorDetailHead"></thead><tbody id="indicatorDetailBody"></tbody></table></div></div>
       </section>
 
       <section id="page-general" class="page hidden">
@@ -193,6 +202,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
-  <script src="app.js?v=224"></script>
+  <script src="app.js?v=226"></script>
 </body>
 </html>
