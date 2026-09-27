@@ -80,3 +80,26 @@ h1,h2,h3,h4{margin:0 0 8px;line-height:1.15}.login-screen{display:grid;place-ite
 .pending-top-filters{align-items:end}.pending-top-filters .grow{min-width:220px}.compact-toolbar{display:flex;align-items:end}.compact-toolbar .grow{max-width:520px}.ready-search-field{min-width:250px;max-width:370px}
 .excel-filter-th{padding:0!important;position:relative}.excel-filter-btn{appearance:none;border:0;background:transparent;width:100%;height:100%;padding:10px 9px;font:inherit;font-weight:800;color:inherit;display:flex;align-items:center;justify-content:space-between;gap:7px;cursor:pointer;text-align:left;white-space:nowrap}.excel-filter-btn span{font-size:9px;color:#667085}.excel-filter-th.filtered{background:#e9f1ff!important;box-shadow:inset 0 -2px 0 #175cd3}.excel-filter-th.filtered .excel-filter-btn,.excel-filter-th.filtered .excel-filter-btn span{color:#175cd3}
 .column-filter-popover{position:fixed;z-index:240;width:330px;max-height:410px;background:#fff;border:1px solid #cfd7e3;border-radius:11px;box-shadow:0 16px 38px rgba(16,24,40,.22);padding:10px}.column-filter-title{font-weight:900;color:#344054;margin:2px 2px 8px}.column-filter-select-all{display:flex;align-items:center;gap:8px;padding:8px 5px;border-bottom:1px solid #eef1f5;font-size:12px}.column-filter-select-all input,.column-filter-option input{width:17px;height:17px;min-height:0;padding:0;margin:0;flex:0 0 auto}.column-filter-options{max-height:245px;overflow:auto;padding:5px 0}.column-filter-option{display:flex;align-items:flex-start;gap:8px;padding:6px 5px;border-radius:7px;cursor:pointer;font-size:12px}.column-filter-option:hover{background:#f5f7fb}.column-filter-option span{line-height:1.3;word-break:break-word}.column-filter-actions{display:flex;justify-content:space-between;gap:8px;padding-top:8px;border-top:1px solid #eef1f5}.has-active-filters{border-color:#9eb4ff!important;background:#f2f6ff!important;color:#2446a8!important;font-weight:800}.pf-date-year,.pf-date-month{margin:4px 0}.pf-date-year>summary,.pf-date-month>summary{cursor:pointer;font-weight:800;color:#344054;padding:4px}.pf-date-month{margin-left:14px}.pf-date-days{margin-left:12px}.cargo-content-search{display:flex;align-items:end;margin:12px 0}.cargo-content-search .field{max-width:460px}.hidden[data-ready-search-row],.hidden[data-cargo-search-row]{display:none!important}
+
+
+/* V2.2.8 · ajuste visual de filtros tipo Excel + búsqueda en Corregir reporte */
+#page-pending .wide-table{min-width:1840px!important;table-layout:auto}
+#page-pending .excel-filter-th[data-pf-key="guideDate"]{min-width:104px}
+#page-pending .excel-filter-th[data-pf-key="district"]{min-width:150px}
+#page-pending .excel-filter-th[data-pf-key="grt"]{min-width:105px}
+#page-pending .excel-filter-th[data-pf-key="gr"]{min-width:142px}
+#page-pending .excel-filter-th[data-pf-key="order"]{min-width:102px}
+#page-pending .excel-filter-th[data-pf-key="recipient"]{min-width:190px}
+#page-pending .excel-filter-th[data-pf-key="address"]{min-width:250px}
+#page-pending .excel-filter-th[data-pf-key="type"]{min-width:148px}
+#page-pending .excel-filter-th[data-pf-key="result"]{min-width:116px}
+#page-pending .excel-filter-th[data-pf-key="docs"]{min-width:190px}
+#page-pending .excel-filter-th[data-pf-key="unsent"]{min-width:118px}
+#page-pending .excel-filter-th[data-pf-key="observations"]{min-width:235px}
+#page-pending .excel-filter-btn{border-radius:0;line-height:1.2;min-height:44px}
+#page-pending .excel-filter-btn:hover{background:#eef3ff;color:#2446a8}
+.column-filter-popover{position:fixed!important;z-index:1000!important;width:330px;max-width:calc(100vw - 24px);max-height:min(410px,calc(100vh - 24px));overflow:hidden;display:flex;flex-direction:column}
+.column-filter-popover.hidden{display:none!important}
+.column-filter-popover .column-filter-options{flex:1;min-height:0;overflow:auto}
+.report-correction-search{display:flex;align-items:end;margin:12px 0}.report-correction-search .field{width:min(520px,100%)}
+.correction-report-table table{min-width:980px}.correction-report-table th:nth-child(2){min-width:165px}.correction-report-table th:nth-child(3){min-width:120px}.correction-report-table th:nth-child(4){min-width:110px}

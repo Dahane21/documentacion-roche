@@ -1,2 +1,3 @@
-ROCHE V2.2.7 WEB
-Actualización sobre V2.2.6: filtros tipo Excel desde los encabezados de Pendientes / Parciales, manteniendo los filtros rápidos superiores de GRT/GR/Pedido, Destinatario, Resultado y Docs por enviar. Se agregan buscadores GRT/GR/Pedido en Listos para enviar, Contenido del cargo y Liquidados. Los filtros de Pendientes permanecen activos mientras la página no se recargue. No requiere cambios SQL.
+ROCHE V2.2.8 WEB
+
+Actualización correctiva sobre V2.2.7. Mantiene las mejoras de búsqueda y filtros e incorpora: filtros de encabezado desplegables junto a cada columna con estilo tipo Excel, ajuste de anchos de columnas de Pendientes / Parciales, invalidación de caché de CSS/JS para GitHub Pages y buscador GRT / GR / Pedido dentro de Corregir reporte. No requiere cambios SQL ni cambios en Supabase.

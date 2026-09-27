@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.7-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
+      version:'2.2.8-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -68,7 +68,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.7-web';
+    copy.version='2.2.8-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.7-web';
+      state.version='2.2.8-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.7-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.8-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.7-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.8-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.7-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.8-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -613,7 +613,7 @@
     };
   }
 
-  // ---------- Pending / Parciales · filtros estilo Excel (V2.2.7) ----------
+  // ---------- Pending / Parciales · filtros estilo Excel (V2.2.8) ----------
   function normalDate(value){ const s=String(value||'').slice(0,10); if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s; const m=String(value||'').match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);return m?`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:''; }
   let pendingMode='';
   const PENDING_FILTER_KEYS=['guideDate','district','grt','gr','order','recipient','address','type','result','docs','unsent','observations'];
@@ -681,9 +681,18 @@
     const pop=$('#pendingColumnFilterPopover'); if(!pop)return;
     pendingFilterKey=key; pendingFilterSearch=''; const all=pendingFilterUniverse(key); const active=pendingColumnFilters[key]; pendingFilterDraft=new Set(active instanceof Set?[...active]:all);
     pop.classList.remove('hidden'); renderPendingFilterPopover();
-    const r=anchor.getBoundingClientRect(); const maxW=340; const left=Math.min(window.innerWidth-maxW-12,Math.max(12,r.left));
-    pop.style.left=`${left}px`; pop.style.top=`${Math.min(window.innerHeight-420,r.bottom+6)}px`;
-    setTimeout(()=>$('#pendingColumnFilterSearch',pop)?.focus(),0);
+    const r=anchor.getBoundingClientRect();
+    const margin=10;
+    const popW=Math.min(330,window.innerWidth-(margin*2));
+    pop.style.width=`${popW}px`;
+    const left=Math.min(window.innerWidth-popW-margin,Math.max(margin,r.left));
+    pop.style.left=`${left}px`;
+    // Medimos la caja ya renderizada para abrirla pegada al encabezado, igual que Excel.
+    const popH=Math.min(pop.scrollHeight,410,window.innerHeight-(margin*2));
+    const roomBelow=window.innerHeight-r.bottom-margin;
+    const top=roomBelow>=Math.min(popH,260) ? r.bottom+4 : Math.max(margin,r.top-popH-4);
+    pop.style.top=`${top}px`;
+    setTimeout(()=>$('#pendingColumnFilterSearch',pop)?.focus({preventScroll:true}),0);
   }
   function closePendingFilterPopover(){const pop=$('#pendingColumnFilterPopover');pop?.classList.add('hidden');pendingFilterKey='';pendingFilterSearch='';}
   $$('[data-pf-open]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const key=b.dataset.pfOpen;if(!$('#pendingColumnFilterPopover').classList.contains('hidden')&&pendingFilterKey===key){closePendingFilterPopover();return;}openPendingFilterPopover(key,b);}));
@@ -927,8 +936,21 @@
       rowsHtml=guides.map(r=>`<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="g:${r.id}" checked></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.type)}</td><td>${esc(r.result)}</td><td>${esc(batchObs(r,previewCarrier[r.grt]===r.id))}</td></tr>`).join('');
       rowsHtml+=(draft.looseIds||[]).map(id=>ensureLooseDocs().find(x=>x.id===id)).filter(Boolean).map(x=>`<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="l:${esc(x.id)}" checked></td><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(looseObs(x))}</td></tr>`).join('');
     }
-    const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(draft.cargo)}</b></div><div><span>FECHA</span><b>${fmtDate(draft.date)}</b></div><div><span>PARA</span><b>DIEGO</b></div></div><div class="callout">${correction?'Estás viendo exactamente el contenido de la versión vigente. Desmarca solo lo que deseas retirar del cargo.':'Puedes desmarcar cualquier ítem antes de confirmar. La documentación no asociada se reportará con GR/GRT/Pedido vacíos, sin inventar datos.'}</div><div class="table-wrap"><table><thead><tr><th>Enviar</th><th>GR / Ítem</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody>${rowsHtml}</tbody></table></div><div class="modal-actions"><button class="btn" id="backPreview">Volver</button><button class="btn primary big" id="confirmReport">${correction?'GUARDAR CORRECCIÓN Y CONFIRMAR':'CONFIRMAR REPORTE'}</button></div>`;
+    const correctionSearch=correction?`<div class="report-correction-search"><div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="correctionReportSearch" placeholder="Buscar…" autocomplete="off"></div></div>`:'';
+    const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(draft.cargo)}</b></div><div><span>FECHA</span><b>${fmtDate(draft.date)}</b></div><div><span>PARA</span><b>DIEGO</b></div></div><div class="callout">${correction?'Estás viendo exactamente el contenido de la versión vigente. Desmarca solo lo que deseas retirar del cargo.':'Puedes desmarcar cualquier ítem antes de confirmar. La documentación no asociada se reportará con GR/GRT/Pedido vacíos, sin inventar datos.'}</div>${correctionSearch}<div class="table-wrap correction-report-table"><table><thead><tr><th>Enviar</th><th>GR / Ítem</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody id="reportPreviewRows">${rowsHtml}</tbody></table></div><div class="modal-actions"><button class="btn" id="backPreview">Volver</button><button class="btn primary big" id="confirmReport">${correction?'GUARDAR CORRECCIÓN Y CONFIRMAR':'CONFIRMAR REPORTE'}</button></div>`;
     openModal(correction?'Corregir reporte':'Vista previa del reporte',correction?'Mismo CARGO. La versión anterior quedará disponible en Historial de versiones.':'Nada cambia definitivamente hasta confirmar.',html,'report-modal');
+    if(correction){
+      const input=$('#correctionReportSearch');
+      const previewRows=$$('tr',$('#reportPreviewRows'));
+      previewRows.forEach(tr=>{
+        const cells=tr.querySelectorAll('td');
+        tr.dataset.correctionSearch=[cells[1]?.textContent,cells[2]?.textContent,cells[3]?.textContent].join(' ').toLowerCase();
+      });
+      input?.addEventListener('input',()=>{
+        const q=String(input.value||'').trim().toLowerCase();
+        previewRows.forEach(tr=>tr.classList.toggle('hidden',!!q&&!String(tr.dataset.correctionSearch||'').includes(q)));
+      });
+    }
     $('#backPreview').onclick=closeModal;
     $('#confirmReport').onclick=()=>{ const refs=$$('.previewCheck:checked').map(x=>x.value); if(!refs.length){toast('El reporte no puede quedar vacío',true);return;} if(correction)confirmCorrection(report,refs,draft); else confirmNewReport(refs,draft); };
   }
