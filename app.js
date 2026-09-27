@@ -630,8 +630,33 @@
     const v=r[key]; return String(v==null||v===''?'—':v);
   }
   function pendingDisplayValue(key,value){ return key==='guideDate'&&value!=='—'?fmtDate(value):value; }
+  function pendingRowsForFilterUniverse(excludeKey=''){
+    const q=String($('#pendingSearch')?.value||'').trim().toLowerCase();
+    const recq=String($('#recipientFilter')?.value||'').trim().toLowerCase();
+    const st=$('#statusFilter')?.value||'';
+    const uns=$('#unsentFilter')?.value||'';
+    return allOperational().filter(r=>!r.liquidated && ['Pendiente','Parcial'].includes(r.result)).filter(r=>{
+      if(q && ![r.gr,r.grt,r.order].join(' ').toLowerCase().includes(q)) return false;
+      if(recq && !String(r.recipient||'').toLowerCase().includes(recq)) return false;
+      if(st && r.result!==st) return false;
+      if(uns==='yes' && !hasUnsent(r)) return false;
+      if(uns==='no' && hasUnsent(r)) return false;
+      for(const key of PENDING_FILTER_KEYS){
+        if(key===excludeKey) continue;
+        const f=pendingColumnFilters[key];
+        if(f instanceof Set && !f.has(pendingColumnValue(r,key))) return false;
+      }
+      if(pendingMode==='pending' && r.result!=='Pendiente') return false;
+      if(pendingMode==='partial' && r.result!=='Parcial') return false;
+      if(pendingMode==='decide' && !(r.result==='Parcial'&&hasUnsent(r)&&!r.readyManual)) return false;
+      if(pendingMode==='untyped' && r.type) return false;
+      return true;
+    });
+  }
   function pendingFilterUniverse(key){
-    const rows=allOperational().filter(r=>!r.liquidated && ['Pendiente','Parcial'].includes(r.result));
+    // Igual que Excel: las opciones de una columna respetan todos los demás
+    // filtros activos. Solo se ignora el filtro de la propia columna que se abre.
+    const rows=pendingRowsForFilterUniverse(key);
     return [...new Set(rows.map(r=>pendingColumnValue(r,key)))].sort((a,b)=>{
       if(key==='guideDate')return String(b).localeCompare(String(a));
       return String(a).localeCompare(String(b),'es',{numeric:true,sensitivity:'base'});
@@ -679,7 +704,7 @@
   }
   function openPendingFilterPopover(key,anchor){
     const pop=$('#pendingColumnFilterPopover'); if(!pop)return;
-    pendingFilterKey=key; pendingFilterSearch=''; const all=pendingFilterUniverse(key); const active=pendingColumnFilters[key]; pendingFilterDraft=new Set(active instanceof Set?[...active]:all);
+    pendingFilterKey=key; pendingFilterSearch=''; const all=pendingFilterUniverse(key); const active=pendingColumnFilters[key]; pendingFilterDraft=new Set(active instanceof Set?[...active].filter(v=>all.includes(v)):all);
     pop.classList.remove('hidden'); renderPendingFilterPopover();
     const r=anchor.getBoundingClientRect();
     const margin=10;
@@ -936,20 +961,29 @@
       rowsHtml=guides.map(r=>`<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="g:${r.id}" checked></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.type)}</td><td>${esc(r.result)}</td><td>${esc(batchObs(r,previewCarrier[r.grt]===r.id))}</td></tr>`).join('');
       rowsHtml+=(draft.looseIds||[]).map(id=>ensureLooseDocs().find(x=>x.id===id)).filter(Boolean).map(x=>`<tr><td><input class="previewCheck big-checkbox" type="checkbox" value="l:${esc(x.id)}" checked></td><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(looseObs(x))}</td></tr>`).join('');
     }
-    const correctionSearch=correction?`<div class="report-correction-search"><div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="correctionReportSearch" placeholder="Buscar…" autocomplete="off"></div></div>`:'';
+    const correctionSearch=correction?`<div class="report-correction-search"><div class="field grow"><label for="correctionReportSearch">Buscar GRT / GR / Pedido</label><input id="correctionReportSearch" type="search" placeholder="Escribe GRT, GR o Pedido…" autocomplete="off"></div><div class="report-correction-count" id="correctionReportCount"></div></div>`:'';
     const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(draft.cargo)}</b></div><div><span>FECHA</span><b>${fmtDate(draft.date)}</b></div><div><span>PARA</span><b>DIEGO</b></div></div><div class="callout">${correction?'Estás viendo exactamente el contenido de la versión vigente. Desmarca solo lo que deseas retirar del cargo.':'Puedes desmarcar cualquier ítem antes de confirmar. La documentación no asociada se reportará con GR/GRT/Pedido vacíos, sin inventar datos.'}</div>${correctionSearch}<div class="table-wrap correction-report-table"><table><thead><tr><th>Enviar</th><th>GR / Ítem</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody id="reportPreviewRows">${rowsHtml}</tbody></table></div><div class="modal-actions"><button class="btn" id="backPreview">Volver</button><button class="btn primary big" id="confirmReport">${correction?'GUARDAR CORRECCIÓN Y CONFIRMAR':'CONFIRMAR REPORTE'}</button></div>`;
     openModal(correction?'Corregir reporte':'Vista previa del reporte',correction?'Mismo CARGO. La versión anterior quedará disponible en Historial de versiones.':'Nada cambia definitivamente hasta confirmar.',html,'report-modal');
     if(correction){
       const input=$('#correctionReportSearch');
+      const count=$('#correctionReportCount');
       const previewRows=$$('tr',$('#reportPreviewRows'));
       previewRows.forEach(tr=>{
         const cells=tr.querySelectorAll('td');
         tr.dataset.correctionSearch=[cells[1]?.textContent,cells[2]?.textContent,cells[3]?.textContent].join(' ').toLowerCase();
       });
-      input?.addEventListener('input',()=>{
-        const q=String(input.value||'').trim().toLowerCase();
-        previewRows.forEach(tr=>tr.classList.toggle('hidden',!!q&&!String(tr.dataset.correctionSearch||'').includes(q)));
-      });
+      const applyCorrectionSearch=()=>{
+        const q=String(input?.value||'').trim().toLowerCase();
+        let visible=0;
+        previewRows.forEach(tr=>{
+          const show=!q||String(tr.dataset.correctionSearch||'').includes(q);
+          tr.classList.toggle('hidden',!show);
+          if(show) visible++;
+        });
+        if(count) count.textContent=`${visible} de ${previewRows.length} ítems`;
+      };
+      input?.addEventListener('input',applyCorrectionSearch);
+      applyCorrectionSearch();
     }
     $('#backPreview').onclick=closeModal;
     $('#confirmReport').onclick=()=>{ const refs=$$('.previewCheck:checked').map(x=>x.value); if(!refs.length){toast('El reporte no puede quedar vacío',true);return;} if(correction)confirmCorrection(report,refs,draft); else confirmNewReport(refs,draft); };
