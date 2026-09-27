@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.6 Web · Tradel</title>
+  <title>Roche V2.2.7 Web · Tradel</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -29,7 +29,7 @@
     <aside class="sidebar">
       <div class="side-brand">
         <img src="logo_tradel.png" alt="Tradel Service" />
-        <div><strong>Roche V2.2.6 Web</strong><span>Seguimiento documental</span></div>
+        <div><strong>Roche V2.2.7 Web</strong><span>Seguimiento documental</span></div>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="quick">⚡ Registro rápido</button>
@@ -86,25 +86,39 @@
           <span class="partial-alert-icon">⚠</span>
           <span><strong><span id="partialAlertCount">0</span> guías parciales requieren revisión</strong><small><span id="partialAlertUnsent">0</span> tienen documentos recibidos pendientes de envío. Haz clic para ver las parciales.</small></span>
         </button>
-        <div class="panel toolbar">
+        <div class="panel toolbar pending-top-filters">
           <div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="pendingSearch" placeholder="Buscar…" /></div>
           <div class="field grow"><label>Destinatario</label><input id="recipientFilter" placeholder="Buscar destinatario…" /></div>
-          <div class="field district-field"><label>Distrito</label><div class="multi-select" id="districtMulti"><button id="districtFilterBtn" class="multi-select-btn" type="button">Todos</button><div id="districtFilterMenu" class="multi-select-menu hidden"><input id="districtFilterSearch" class="multi-select-search" placeholder="Buscar distrito…" autocomplete="off"><div id="districtFilterOptions" class="multi-select-options"></div></div></div></div>
           <div class="field"><label>Resultado</label><select id="statusFilter"><option value="">Todos</option><option>Pendiente</option><option>Parcial</option></select></div>
           <div class="field"><label>Docs por enviar</label><select id="unsentFilter"><option value="">Todos</option><option value="yes">Sí</option><option value="no">No</option></select></div>
-          <div class="field date-tree-field"><label>Fecha de emisión · GR Roche</label><div class="multi-select" id="dateMulti"><button id="dateFilterBtn" class="multi-select-btn" type="button">Todas las fechas</button><div id="dateFilterMenu" class="multi-select-menu hidden"><div class="date-tree-head"><button class="btn small" type="button" id="dateSelectAll">Seleccionar todo</button><button class="btn small" type="button" id="dateClear">Limpiar fechas</button></div><div id="dateFilterOptions" class="date-tree-options"></div><button class="btn small primary" type="button" id="dateApply">Aplicar</button></div></div></div>
           <button id="clearPendingFilters" class="btn">Limpiar</button>
         </div>
         <div class="table-wrap panel">
           <table class="wide-table">
-            <thead><tr><th>Fecha guía</th><th>Distrito</th><th>GRT</th><th>GR cliente</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>Tipo</th><th>Resultado</th><th>Documentación</th><th>Docs por enviar</th><th>Observaciones</th><th>Acciones</th></tr></thead>
+            <thead><tr>
+              <th class="excel-filter-th" data-pf-key="guideDate"><button class="excel-filter-btn" type="button" data-pf-open="guideDate">Fecha guía <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="district"><button class="excel-filter-btn" type="button" data-pf-open="district">Distrito <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="grt"><button class="excel-filter-btn" type="button" data-pf-open="grt">GRT <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="gr"><button class="excel-filter-btn" type="button" data-pf-open="gr">GR cliente <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="order"><button class="excel-filter-btn" type="button" data-pf-open="order">Pedido <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="recipient"><button class="excel-filter-btn" type="button" data-pf-open="recipient">Destinatario <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="address"><button class="excel-filter-btn" type="button" data-pf-open="address">Dirección <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="type"><button class="excel-filter-btn" type="button" data-pf-open="type">Tipo <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="result"><button class="excel-filter-btn" type="button" data-pf-open="result">Resultado <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="docs"><button class="excel-filter-btn" type="button" data-pf-open="docs">Documentación <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="unsent"><button class="excel-filter-btn" type="button" data-pf-open="unsent">Docs por enviar <span>▼</span></button></th>
+              <th class="excel-filter-th" data-pf-key="observations"><button class="excel-filter-btn" type="button" data-pf-open="observations">Observaciones <span>▼</span></button></th>
+              <th>Acciones</th>
+            </tr></thead>
             <tbody id="pendingTableBody"></tbody>
           </table>
         </div>
+        <div id="pendingColumnFilterPopover" class="column-filter-popover hidden"></div>
       </section>
 
       <section id="page-ready" class="page hidden">
         <div class="panel ready-head">
+          <div class="field grow ready-search-field"><label>Buscar GRT / GR / Pedido</label><input id="readySearch" placeholder="Buscar…" autocomplete="off" /></div>
           <div class="field"><label>Fecha de entrega a Roche</label><input id="reportDate" type="date" /></div>
           <div class="field"><label>Cargo</label><input id="cargoNumber" placeholder="Ej. 300 o N0380" /><small class="field-help">El primero se indica manualmente; los siguientes avanzan en automático.</small></div>
           <div class="field fixed-value"><label>Para</label><strong>DIEGO</strong></div>
@@ -154,6 +168,9 @@
       </section>
 
       <section id="page-closed" class="page hidden">
+        <div class="panel toolbar compact-toolbar">
+          <div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="closedSearch" placeholder="Buscar…" autocomplete="off" /></div>
+        </div>
         <div class="table-wrap panel">
           <table class="wide-table">
             <thead><tr><th>Fecha liquidación</th><th>GRT</th><th>GR cliente</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>Distrito</th><th>Tipo</th><th>Documentación final</th><th>Cargo</th><th>Ver</th></tr></thead>
@@ -202,6 +219,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
-  <script src="app.js?v=226"></script>
+  <script src="app.js?v=227"></script>
 </body>
 </html>

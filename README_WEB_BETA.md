@@ -1,4 +1,4 @@
-# Roche V2 Web Beta
+# Roche V2.2.7 Web
 
 Esta beta conserva la lógica de V1.4.3 pero cambia el almacenamiento principal a Supabase.
 
