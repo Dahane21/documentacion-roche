@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.8-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], looseDocs:[],
+      version:'2.2.10-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -68,7 +68,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.8-web';
+    copy.version='2.2.10-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.8-web';
+      state.version='2.2.10-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.8-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.10-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.8-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.10-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.8-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.10-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -349,7 +349,7 @@
     $('#modalTitle').textContent=title; $('#modalSubtitle').textContent=subtitle||''; $('#modalBody').innerHTML=html;
     $('#modal').className='modal '+cls; $('#modalBackdrop').classList.remove('hidden');
   }
-  function closeModal(){ $('#modalBackdrop').classList.add('hidden'); $('#modalBody').innerHTML=''; }
+  function closeModal(){ closeExcelFilterPopover?.(); $('#modalBackdrop').classList.add('hidden'); $('#modalBody').innerHTML=''; }
   $('#modalClose').addEventListener('click',closeModal);
   $('#modalBackdrop').addEventListener('click',e=>{ if(e.target.id==='modalBackdrop') closeModal(); });
 
@@ -724,6 +724,83 @@
   document.addEventListener('click',e=>{const pop=$('#pendingColumnFilterPopover');if(pop&&!pop.classList.contains('hidden')&&!pop.contains(e.target)&&!e.target.closest('[data-pf-open]'))closePendingFilterPopover();});
   window.addEventListener('resize',closePendingFilterPopover);
 
+  // ---------- Filtros Excel reutilizables (Reporte general / Liquidados / contenido historial) ----------
+  const excelFilterScopes={};
+  let excelActiveScope='', excelActiveKey='', excelFilterDraft=new Set(), excelFilterSearch='';
+  function ensureRegularizations(){ state.regularizations=Array.isArray(state.regularizations)?state.regularizations:[]; return state.regularizations; }
+  function registerExcelFilterScope(name,config,reset=false){
+    const previous=excelFilterScopes[name];
+    const filters=(!reset&&previous?.filters)?previous.filters:Object.fromEntries(config.keys.map(k=>[k,null]));
+    excelFilterScopes[name]={...config,filters};
+    updateExcelFilterHeaderStates(name);
+    return excelFilterScopes[name];
+  }
+  function excelScopeValue(scope,row,key){
+    const v=scope.value(row,key);
+    return String(v==null||v===''?'—':v);
+  }
+  function excelFilteredRows(name,excludeKey=''){
+    const scope=excelFilterScopes[name]; if(!scope)return [];
+    return scope.baseRows().filter(row=>{
+      for(const key of scope.keys){
+        if(key===excludeKey)continue;
+        const f=scope.filters[key];
+        if(f instanceof Set && !f.has(excelScopeValue(scope,row,key)))return false;
+      }
+      return true;
+    });
+  }
+  function excelFilterUniverse(name,key){
+    const scope=excelFilterScopes[name]; if(!scope)return [];
+    const vals=[...new Set(excelFilteredRows(name,key).map(row=>excelScopeValue(scope,row,key)))];
+    return vals.sort((a,b)=>{
+      if(scope.dateKeys?.includes(key))return String(b).localeCompare(String(a));
+      return String(a).localeCompare(String(b),'es',{numeric:true,sensitivity:'base'});
+    });
+  }
+  function excelDisplayValue(scope,key,value){ return scope.dateKeys?.includes(key)&&/^\d{4}-\d{2}-\d{2}$/.test(value)?fmtDate(value):value; }
+  function updateExcelFilterHeaderStates(name){
+    const scope=excelFilterScopes[name]; if(!scope)return;
+    $$(`[data-xf-scope="${name}"][data-xf-key]`).forEach(th=>th.classList.toggle('filtered',scope.filters[th.dataset.xfKey] instanceof Set));
+  }
+  function excelDateTreeHtml(scope,key,values){
+    const months=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const valid=values.filter(v=>/^\d{4}-\d{2}-\d{2}$/.test(v)), groups={};
+    valid.forEach(d=>{const [y,m]=d.split('-');(((groups[y]??={})[m]??=[])).push(d);});
+    const blocks=Object.keys(groups).sort().reverse().map(y=>`<details open class="pf-date-year"><summary>${y}</summary>${Object.keys(groups[y]).sort().reverse().map(m=>`<details class="pf-date-month"><summary>${months[Number(m)]}</summary><div class="pf-date-days">${groups[y][m].map(d=>`<label class="column-filter-option"><input type="checkbox" data-xf-value="${esc(d)}" ${excelFilterDraft.has(d)?'checked':''}><span>${fmtDate(d)}</span></label>`).join('')}</div></details>`).join('')}</details>`).join('');
+    const empty=values.includes('—')?`<label class="column-filter-option"><input type="checkbox" data-xf-value="—" ${excelFilterDraft.has('—')?'checked':''}><span>Sin fecha</span></label>`:'';
+    return blocks+empty;
+  }
+  function renderExcelFilterPopover(){
+    const pop=$('#tableExcelFilterPopover'), scope=excelFilterScopes[excelActiveScope];
+    if(!pop||!scope||!excelActiveKey)return;
+    const all=excelFilterUniverse(excelActiveScope,excelActiveKey), q=excelFilterSearch.trim().toLowerCase();
+    const visible=all.filter(v=>!q||excelDisplayValue(scope,excelActiveKey,v).toLowerCase().includes(q));
+    const allSelected=all.length>0&&all.every(v=>excelFilterDraft.has(v));
+    const body=scope.dateKeys?.includes(excelActiveKey)&&!q?excelDateTreeHtml(scope,excelActiveKey,visible):(visible.length?visible.map(v=>`<label class="column-filter-option"><input type="checkbox" data-xf-value="${esc(v)}" ${excelFilterDraft.has(v)?'checked':''}><span>${esc(excelDisplayValue(scope,excelActiveKey,v))}</span></label>`).join(''):'<div class="multi-select-empty">No hay valores que coincidan.</div>');
+    pop.innerHTML=`<div class="column-filter-title">Filtrar ${esc(scope.labels?.[excelActiveKey]||excelActiveKey)}</div><input id="tableExcelFilterSearch" class="multi-select-search" placeholder="Buscar…" value="${esc(excelFilterSearch)}" autocomplete="off"><label class="column-filter-select-all"><input id="tableExcelSelectAll" type="checkbox" ${allSelected?'checked':''}> <b>Seleccionar todo</b></label><div class="column-filter-options">${body}</div><div class="column-filter-actions"><button class="btn small" type="button" id="tableExcelClear">Limpiar columna</button><button class="btn small primary" type="button" id="tableExcelApply">Aplicar</button></div>`;
+    $('#tableExcelFilterSearch',pop)?.addEventListener('input',e=>{excelFilterSearch=e.target.value;renderExcelFilterPopover();setTimeout(()=>{const x=$('#tableExcelFilterSearch');x?.focus();x?.setSelectionRange(x.value.length,x.value.length);},0);});
+    $('#tableExcelSelectAll',pop)?.addEventListener('change',e=>{const vals=excelFilterUniverse(excelActiveScope,excelActiveKey);excelFilterDraft.clear();if(e.target.checked)vals.forEach(v=>excelFilterDraft.add(v));renderExcelFilterPopover();});
+    $$('.column-filter-option input',pop).forEach(cb=>cb.addEventListener('change',e=>{const v=e.target.dataset.xfValue;e.target.checked?excelFilterDraft.add(v):excelFilterDraft.delete(v);const allNow=excelFilterUniverse(excelActiveScope,excelActiveKey);const sa=$('#tableExcelSelectAll',pop);if(sa)sa.checked=allNow.length>0&&allNow.every(x=>excelFilterDraft.has(x));}));
+    $('#tableExcelClear',pop)?.addEventListener('click',()=>{scope.filters[excelActiveKey]=null;closeExcelFilterPopover();scope.onChange?.();});
+    $('#tableExcelApply',pop)?.addEventListener('click',()=>{const allNow=excelFilterUniverse(excelActiveScope,excelActiveKey);scope.filters[excelActiveKey]=(allNow.length===excelFilterDraft.size&&allNow.every(v=>excelFilterDraft.has(v)))?null:new Set(excelFilterDraft);closeExcelFilterPopover();scope.onChange?.();});
+  }
+  function openExcelFilterPopover(scopeName,key,anchor){
+    const pop=$('#tableExcelFilterPopover'),scope=excelFilterScopes[scopeName]; if(!pop||!scope)return;
+    excelActiveScope=scopeName;excelActiveKey=key;excelFilterSearch='';const all=excelFilterUniverse(scopeName,key),active=scope.filters[key];excelFilterDraft=new Set(active instanceof Set?[...active].filter(v=>all.includes(v)):all);
+    pop.classList.remove('hidden');renderExcelFilterPopover();
+    const r=anchor.getBoundingClientRect(),margin=10,popW=Math.min(330,window.innerWidth-margin*2);pop.style.width=`${popW}px`;pop.style.left=`${Math.min(window.innerWidth-popW-margin,Math.max(margin,r.left))}px`;
+    const popH=Math.min(pop.scrollHeight,410,window.innerHeight-margin*2),roomBelow=window.innerHeight-r.bottom-margin;pop.style.top=`${roomBelow>=Math.min(popH,260)?r.bottom+4:Math.max(margin,r.top-popH-4)}px`;
+    setTimeout(()=>$('#tableExcelFilterSearch',pop)?.focus({preventScroll:true}),0);
+  }
+  function closeExcelFilterPopover(){const pop=$('#tableExcelFilterPopover');pop?.classList.add('hidden');excelActiveScope='';excelActiveKey='';excelFilterSearch='';}
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest('[data-xf-scope][data-xf-open]');
+    if(btn){e.stopPropagation();const scope=btn.dataset.xfScope,key=btn.dataset.xfOpen;if(!$('#tableExcelFilterPopover').classList.contains('hidden')&&excelActiveScope===scope&&excelActiveKey===key){closeExcelFilterPopover();return;}openExcelFilterPopover(scope,key,btn);return;}
+    const pop=$('#tableExcelFilterPopover');if(pop&&!pop.classList.contains('hidden')&&!pop.contains(e.target))closeExcelFilterPopover();
+  });
+  window.addEventListener('resize',closeExcelFilterPopover);
+
   $$('.stat-filter').forEach(b=>b.onclick=()=>{ pendingMode=b.dataset.pendingFilter; $('#statusFilter').value=''; renderPending(); });
   $('#partialAlert').onclick=()=>{ pendingMode='partial'; $('#statusFilter').value='Parcial'; renderPending(); };
   ['pendingSearch','recipientFilter','unsentFilter'].forEach(id=>$('#'+id).addEventListener('input',renderPending));
@@ -848,12 +925,13 @@
     const followHtml=follow.length?`<div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Situación</th><th>Observación</th><th>Usuario</th></tr></thead><tbody>${follow.map(x=>`<tr><td>${new Date(x.at).toLocaleString('es-PE')}</td><td>${esc(x.situation||'—')}</td><td>${esc(x.note||'—')}</td><td>${esc(x.user||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-hint">Sin observaciones registradas en el sistema nuevo.</div>';
     const gh=(r.grtHistory||[]).slice().reverse();
     const grtHist=gh.length?`<div class="grt-history"><h4>Historial de GRT</h4>${gh.map(x=>`<div><b>${esc(x.oldGRT||'—')} → ${esc(x.newGRT||r.grt)}</b><span>${x.at?new Date(x.at).toLocaleString('es-PE'):'Migración inicial'} · ${esc(x.user||'—')} · ${esc(x.reason||'')}</span></div>`).join('')}</div>`:'';
-    const html=`${baseInfo(r)}<div class="detail-kpis"><div><span>Tipo</span><b>${esc(r.type||'Sin tipificar')}</b></div><div><span>Resultado</span><b>${esc(r.result)}</b></div><div><span>Docs por enviar</span><b>${hasUnsent(r)?'Sí':'No'}</b></div><div><span>Documentación acumulada</span><b>${esc(docsText(r,false))}</b></div></div>${sharedGRTDetail(r)}${grtHist}${r.closeReason?`<div class="callout">Liquidación directa: ${esc(r.closeReason)}</div>`:''}<h4>Historial de recepciones</h4><div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Usuario</th><th>Documentos</th><th>Envío</th><th>Acción</th></tr></thead><tbody>${receipts||'<tr><td colspan="5">Sin recepciones</td></tr>'}</tbody></table></div><div class="detail-section-head"><h4>Observaciones / seguimiento</h4><button class="btn small" id="detailAddFollow">Actualizar seguimiento</button></div>${followHtml}`;
+    const reg=getRegularizationForRecord(r); const closeInfo=reg?`<div class="callout regularization-callout"><b>Regularización histórica:</b> liquidada con fecha ${fmtDate(reg.date)}${reg.cargo?` · Cargo ${esc(reg.cargo)}`:''}.<br><small>${esc(reg.reason||'—')} · Registrado por ${esc(reg.user||'—')}</small></div>`:(r.closeReason?`<div class="callout">Liquidación directa: ${esc(r.closeReason)}</div>`:'');
+    const html=`${baseInfo(r)}<div class="detail-kpis"><div><span>Tipo</span><b>${esc(r.type||'Sin tipificar')}</b></div><div><span>Resultado</span><b>${esc(r.result)}</b></div><div><span>Docs por enviar</span><b>${hasUnsent(r)?'Sí':'No'}</b></div><div><span>Documentación acumulada</span><b>${esc(docsText(r,false))}</b></div></div>${sharedGRTDetail(r)}${grtHist}${closeInfo}<h4>Historial de recepciones</h4><div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Usuario</th><th>Documentos</th><th>Envío</th><th>Acción</th></tr></thead><tbody>${receipts||'<tr><td colspan="5">Sin recepciones</td></tr>'}</tbody></table></div><div class="detail-section-head"><h4>Observaciones / seguimiento</h4><button class="btn small" id="detailAddFollow">Actualizar seguimiento</button></div>${followHtml}`;
     openModal('Detalle de guía','Puedes anular una recepción no enviada si se registró por error. Las recepciones ya reportadas conservan su trazabilidad.',html,'detail-modal');
     $('#detailAddFollow').onclick=()=>{ closeModal(); openFollowUp(r); };
     $$('[data-annul-receipt]',$('#modalBody')).forEach(b=>b.onclick=()=>annulReceipt(r,b.dataset.annulReceipt));
   }
-  function reportLabel(id){ const rp=state.reports.find(x=>x.id===id); return rp?rp.cargo:id; }
+  function reportLabel(id){ const rp=state.reports.find(x=>x.id===id); if(rp)return rp.cargo; if(String(id||'').startsWith('reg:')){const reg=ensureRegularizations().find(x=>`reg:${x.id}`===String(id));return reg?regularizationLabel(reg):'Regularización histórica';} return id; }
 
   function nextCargoFrom(cargo){
     const raw=String(cargo||'').trim();
@@ -1131,45 +1209,205 @@
 
   // ---------- General / closed ----------
   let generalState='';
+  const GENERAL_FILTER_KEYS=['guideDate','district','route','order','recipient','address','grt','gr','type','result','finalState','docs','unsent','observations'];
+  const CLOSED_FILTER_KEYS=['liquidatedAt','grt','gr','order','recipient','address','district','type','docs','cargo'];
+  function generalBaseRows(){
+    recalcAll();
+    const q=String($('#generalSearch')?.value||'').trim().toLowerCase();
+    let rows=state.records.filter(r=>r.imported).filter(r=>!q||[r.gr,r.grt,r.order,r.recipient].join(' ').toLowerCase().includes(q));
+    if(generalState==='active')rows=rows.filter(r=>!r.cancelled&&!r.liquidated);
+    if(generalState==='liquidated')rows=rows.filter(r=>r.liquidated);
+    if(generalState==='cancelled')rows=rows.filter(r=>r.cancelled);
+    return rows;
+  }
+  function generalColumnValue(r,key){
+    if(key==='guideDate')return normalDate(r.guideDate)||'—';
+    if(key==='finalState')return r.cancelled?'Anulado':r.liquidated?'Liquidado':'Activo';
+    if(key==='docs')return docsText(r,false)||'—';
+    if(key==='unsent')return hasUnsent(r)?'Sí':'No';
+    if(key==='observations'){const f=latestFollowUp(r);return [f?.situation,f?.note].filter(Boolean).join(' · ')||'Sin observación';}
+    return r[key]||'—';
+  }
+  function ensureGeneralExcelScope(){
+    registerExcelFilterScope('general',{
+      keys:GENERAL_FILTER_KEYS,dateKeys:['guideDate'],
+      labels:{guideDate:'Fecha guía',district:'Distrito',route:'HR',order:'Pedido',recipient:'Destinatario',address:'Dirección',grt:'GRT',gr:'GR cliente',type:'Tipo',result:'Resultado',finalState:'Estado final',docs:'Documentación acumulada',unsent:'Docs por enviar',observations:'Observaciones'},
+      baseRows:generalBaseRows,value:generalColumnValue,onChange:renderGeneral
+    });
+  }
   $$('#generalSegments button').forEach(b=>b.onclick=()=>{ generalState=b.dataset.state; $$('#generalSegments button').forEach(x=>x.classList.toggle('active',x===b)); renderGeneral(); });
   $('#generalSearch').addEventListener('input',renderGeneral);
   function renderGeneral(){
-    recalcAll(); const q=$('#generalSearch').value.toLowerCase(); let rows=state.records.filter(r=>r.imported).filter(r=>!q||[r.gr,r.grt,r.order,r.recipient].join(' ').toLowerCase().includes(q));
-    if(generalState==='active')rows=rows.filter(r=>!r.cancelled&&!r.liquidated); if(generalState==='liquidated')rows=rows.filter(r=>r.liquidated); if(generalState==='cancelled')rows=rows.filter(r=>r.cancelled);
-    $('#generalTableBody').innerHTML=rows.slice(0,400).map(r=>`<tr><td>${fmtDate(r.guideDate)}</td><td>${esc(r.district)}</td><td>${esc(r.route)}</td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td class="address-cell">${esc(r.address||'—')}</td><td>${esc(r.grt)}</td><td><b>${esc(r.gr)}</b></td><td>${esc(r.type||'—')}</td><td>${esc(r.result)}</td><td>${r.cancelled?'Anulado':r.liquidated?'Liquidado':'Activo'}</td><td>${esc(docsText(r,false))}</td><td>${hasUnsent(r)?'Sí':'No'}</td><td>${followUpCell(r)}</td><td><button class="icon-btn" data-gview="${r.id}">🔍</button></td></tr>`).join('');
+    ensureGeneralExcelScope();
+    const rows=excelFilteredRows('general');
+    $('#generalTableBody').innerHTML=rows.slice(0,400).map(r=>`<tr><td>${fmtDate(r.guideDate)}</td><td>${esc(r.district)}</td><td>${esc(r.route)}</td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td class="address-cell">${esc(r.address||'—')}</td><td>${esc(r.grt)}</td><td><b>${esc(r.gr)}</b></td><td>${esc(r.type||'—')}</td><td>${esc(r.result)}</td><td>${r.cancelled?'Anulado':r.liquidated?'Liquidado':'Activo'}</td><td>${esc(docsText(r,false))}</td><td>${hasUnsent(r)?'Sí':'No'}</td><td>${followUpCell(r)}</td><td><button class="icon-btn" data-gview="${r.id}">🔍</button></td></tr>`).join('')||'<tr><td colspan="15" class="empty-row">No hay registros con estos filtros.</td></tr>';
+    updateExcelFilterHeaderStates('general');
     $$('[data-gview]').forEach(b=>b.onclick=()=>openDetail(getRecord(b.dataset.gview)));
     $$('[data-follow]', $('#generalTableBody')).forEach(b=>b.onclick=()=>openFollowUp(getRecord(b.dataset.follow)));
   }
+
+  function getRegularizationForRecord(r){
+    if(!r?.regularizationId)return null;
+    return ensureRegularizations().find(x=>x.id===r.regularizationId)||null;
+  }
+  function regularizationLabel(reg){
+    if(!reg)return 'Regularización histórica';
+    return reg.cargo?`${reg.cargo} · Regularización`:'Regularización histórica';
+  }
+  function closedCargoLabel(r){
+    const reg=getRegularizationForRecord(r); if(reg)return regularizationLabel(reg);
+    const reps=state.reports.filter(p=>currentReportItems(p).some(i=>i.recordId===r.id));
+    return reps.length?reps[reps.length-1].cargo:'Cierre directo';
+  }
+  function closedBaseRows(){
+    const q=String($('#closedSearch')?.value||'').trim().toLowerCase();
+    return state.records.filter(r=>r.liquidated&&!r.cancelled).filter(r=>!q||[r.grt,r.gr,r.order].join(' ').toLowerCase().includes(q));
+  }
+  function closedColumnValue(r,key){
+    if(key==='liquidatedAt')return normalDate(r.liquidatedAt)||'—';
+    if(key==='docs')return docsText(r,false)||'—';
+    if(key==='cargo')return closedCargoLabel(r);
+    return r[key]||'—';
+  }
+  function ensureClosedExcelScope(){
+    registerExcelFilterScope('closed',{
+      keys:CLOSED_FILTER_KEYS,dateKeys:['liquidatedAt'],
+      labels:{liquidatedAt:'Fecha liquidación',grt:'GRT',gr:'GR cliente',order:'Pedido',recipient:'Destinatario',address:'Dirección',district:'Distrito',type:'Tipo',docs:'Documentación final',cargo:'Cargo / origen'},
+      baseRows:closedBaseRows,value:closedColumnValue,onChange:renderClosed
+    });
+  }
   $('#closedSearch').addEventListener('input',renderClosed);
   function renderClosed(){
-    const q=String($('#closedSearch')?.value||'').trim().toLowerCase();
-    const rows=state.records.filter(r=>r.liquidated&&!r.cancelled).filter(r=>!q||[r.grt,r.gr,r.order].join(' ').toLowerCase().includes(q));
-    $('#closedTableBody').innerHTML=rows.map(r=>{const reps=state.reports.filter(p=>currentReportItems(p).some(i=>i.recordId===r.id)); return `<tr><td>${fmtDate(r.liquidatedAt)}</td><td>${esc(r.grt)}</td><td><b>${esc(r.gr)}</b></td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td>${esc(r.address)}</td><td>${esc(r.district)}</td><td>${esc(r.type)}</td><td>${esc(docsText(r,false))}</td><td>${reps.length?esc(reps[reps.length-1].cargo):'Cierre directo'}</td><td><button class="icon-btn" data-cview="${r.id}">🔍</button></td></tr>`;}).join('')||'<tr><td colspan="11" class="empty-row">No hay liquidados con esta búsqueda.</td></tr>';
+    ensureClosedExcelScope();
+    const rows=excelFilteredRows('closed');
+    $('#closedTableBody').innerHTML=rows.map(r=>{const reg=getRegularizationForRecord(r),cargo=closedCargoLabel(r);return `<tr><td>${fmtDate(r.liquidatedAt)}</td><td>${esc(r.grt)}</td><td><b>${esc(r.gr)}</b></td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td>${esc(r.address)}</td><td>${esc(r.district)}</td><td>${esc(r.type)}</td><td>${esc(docsText(r,false))}</td><td>${reg?`<span class="regularization-tag">Regularización</span><br><small>${esc(reg.cargo||'Excel anterior')}</small>`:esc(cargo)}</td><td><button class="icon-btn" data-cview="${r.id}">🔍</button></td></tr>`;}).join('')||'<tr><td colspan="11" class="empty-row">No hay liquidados con esta búsqueda o filtros.</td></tr>';
+    updateExcelFilterHeaderStates('closed');
     $$('[data-cview]').forEach(b=>b.onclick=()=>openDetail(getRecord(b.dataset.cview)));
   }
 
+  function openHistoricalRegularization(){
+    recalcAll();
+    const eligible=allOperational().filter(r=>!r.liquidated&&['Pendiente','Parcial'].includes(r.result));
+    if(!eligible.length){toast('No hay guías activas disponibles para regularizar',true);return;}
+    const selected=new Set();
+    const html=`<div class="callout regularization-callout"><b>Regularización histórica.</b> Úsala únicamente para guías que ya fueron liquidadas en el control Excel anterior y no quedaron registradas como liquidadas en este sistema. Quedarán diferenciadas de los cargos generados normalmente.</div>
+      <div class="form-grid regularization-fields"><div class="field"><label>Fecha de liquidación histórica *</label><input id="historicalLiquidationDate" type="date"></div><div class="field"><label>Cargo antiguo (si lo conoces)</label><input id="historicalCargo" placeholder="Ej. N0318" autocomplete="off"></div><div class="field span2"><label>Motivo / referencia *</label><input id="historicalReason" value="Regularización de liquidación registrada en Excel anterior" autocomplete="off"></div></div>
+      <div class="regularization-toolbar"><div class="field grow"><label>Buscar GRT / GR / Pedido / Destinatario</label><input id="historicalSearch" placeholder="Buscar…" autocomplete="off"></div><button class="btn small" id="historicalSelectVisible" type="button">Seleccionar visibles</button><button class="btn small" id="historicalClearSelection" type="button">Desmarcar</button><strong id="historicalSelectedCount">0 seleccionadas</strong></div>
+      <div class="table-wrap regularization-table"><table><thead><tr><th></th><th>Fecha guía</th><th>GR</th><th>GRT</th><th>Pedido</th><th>Destinatario</th><th>Tipo</th><th>Estado actual</th></tr></thead><tbody id="historicalRegularizationRows"></tbody></table></div>
+      <div class="modal-actions"><button class="btn" id="historicalCancel">Cancelar</button><button class="btn primary big" id="historicalConfirm">REGULARIZAR COMO LIQUIDADO</button></div>`;
+    openModal('Regularizar liquidación histórica','Registro excepcional para cargos liquidados antes de utilizar este sistema.',html,'report-modal regularization-modal');
+    const visibleRows=()=>{const q=String($('#historicalSearch')?.value||'').trim().toLowerCase();return eligible.filter(r=>!q||[r.gr,r.grt,r.order,r.recipient].join(' ').toLowerCase().includes(q));};
+    const renderRows=()=>{
+      const rows=visibleRows();
+      $('#historicalRegularizationRows').innerHTML=rows.map(r=>`<tr><td><input class="historicalCheck big-checkbox" type="checkbox" value="${esc(r.id)}" ${selected.has(String(r.id))?'checked':''}></td><td>${fmtDate(r.guideDate)}</td><td><b>${esc(r.gr)}</b></td><td>${esc(r.grt)}</td><td>${esc(r.order)}</td><td>${esc(r.recipient)}</td><td>${esc(r.type||'—')}</td><td>${esc(r.result)}</td></tr>`).join('')||'<tr><td colspan="8" class="empty-row">No hay coincidencias.</td></tr>';
+      $$('.historicalCheck',$('#historicalRegularizationRows')).forEach(cb=>cb.onchange=()=>{cb.checked?selected.add(String(cb.value)):selected.delete(String(cb.value));$('#historicalSelectedCount').textContent=`${selected.size} seleccionadas`;});
+      $('#historicalSelectedCount').textContent=`${selected.size} seleccionadas`;
+    };
+    $('#historicalSearch').addEventListener('input',renderRows);
+    $('#historicalSelectVisible').onclick=()=>{visibleRows().forEach(r=>selected.add(String(r.id)));renderRows();};
+    $('#historicalClearSelection').onclick=()=>{selected.clear();renderRows();};
+    $('#historicalCancel').onclick=closeModal;
+    $('#historicalConfirm').onclick=()=>{
+      const date=$('#historicalLiquidationDate').value, cargo=$('#historicalCargo').value.trim(), reason=$('#historicalReason').value.trim();
+      if(!date){toast('Selecciona la fecha histórica de liquidación',true);return;}
+      if(date>new Date().toISOString().slice(0,10)){toast('La fecha de regularización no puede ser futura',true);return;}
+      if(!reason){toast('Indica el motivo o referencia de la regularización',true);return;}
+      if(!selected.size){toast('Selecciona al menos una guía',true);return;}
+      if(cargo&&state.reports.some(p=>String(p.cargo||'').trim().toLowerCase()===cargo.toLowerCase())){toast('Ese cargo ya existe en Historial Roche como reporte del sistema',true);return;}
+      const records=[...selected].map(id=>getRecord(id)).filter(r=>r&&!r.cancelled&&!r.liquidated);
+      if(!records.length){toast('Las guías seleccionadas ya no están disponibles para regularizar',true);return;}
+      if(!confirm(`Se marcarán ${records.length} guía(s) como liquidadas históricamente con fecha ${fmtDate(date)}. Esta acción no crea un reporte Roche nuevo. ¿Confirmar?`))return;
+      const reg={id:uid('reg'),kind:'regularization',date,cargo,reason,at:nowIso(),user:state.currentUser,items:records.map(r=>({recordId:r.id,gr:r.gr,grt:r.grt,order:r.order,recipient:r.recipient,district:r.district,type:r.type,resultBefore:r.result,docs:docsText(r,false)}))};
+      ensureRegularizations().push(reg);
+      const sentId=`reg:${reg.id}`;
+      records.forEach(r=>{
+        (r.receipts||[]).forEach(m=>{if(!m.annulled&&!m.sentReportId)m.sentReportId=sentId;});
+        const ledger=getGRTLedger(r.grt);if(ledger&&!ledger.sentReportId)ledger.sentReportId=sentId;
+        r.manualComplete=true;r.readyManual=false;r.result='Completo';r.liquidated=true;r.liquidatedAt=`${date}T12:00:00`;r.closeReason=reason;r.regularizationId=reg.id;r.regularizedAt=reg.at;r.regularizedBy=reg.user;
+        r.audit=r.audit||[];r.audit.push({at:reg.at,user:reg.user,action:'Regularización histórica',detail:`${fmtDate(date)}${cargo?' · '+cargo:''} · ${reason}`});
+      });
+      saveState();audit('Regularización histórica',`${cargo||'Sin cargo'} · ${records.length} guía(s) · ${fmtDate(date)}`);closeModal();renderAll();toast(`${records.length} guía(s) regularizadas como liquidadas`);
+    };
+    renderRows();
+  }
+  $('#regularizeHistoricalBtn')?.addEventListener('click',openHistoricalRegularization);
+
   // ---------- History / correction ----------
   function renderHistory(){
-    $('#historyTableBody').innerHTML=state.reports.slice().reverse().map(r=>`<tr><td><b>${esc(r.cargo)}</b></td><td>${fmtDate(r.date)}</td><td>v${r.currentVersion}</td><td>${currentReportItems(r).length}</td><td>${esc(r.versions[r.versions.length-1].user)}</td><td>${esc(r.status)}</td><td><button class="btn small" data-hview="${r.id}">Ver contenido</button><button class="btn small" data-hversions="${r.id}">Versiones</button><button class="btn small" data-download="${r.id}">Descargar</button><button class="btn small" data-correct="${r.id}">Corregir reporte</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty-row">No hay reportes confirmados.</td></tr>';
+    const reportEntries=state.reports.map(r=>({kind:'report',at:r.versions?.[r.versions.length-1]?.at||r.date,obj:r}));
+    const regularizationEntries=ensureRegularizations().map(r=>({kind:'regularization',at:r.at||r.date,obj:r}));
+    const entries=[...reportEntries,...regularizationEntries].sort((a,b)=>new Date(b.at||0)-new Date(a.at||0));
+    $('#historyTableBody').innerHTML=entries.map(e=>{
+      if(e.kind==='regularization'){
+        const r=e.obj;
+        return `<tr class="regularization-history-row"><td><b>${esc(r.cargo||'REGULARIZACIÓN')}</b><br><span class="regularization-tag">Excel anterior</span></td><td>${fmtDate(r.date)}</td><td>—</td><td>${(r.items||[]).length}</td><td>${esc(r.user||'—')}</td><td><span class="regularization-tag">Regularización</span></td><td><button class="btn small" data-reg-view="${r.id}">Ver detalle</button></td></tr>`;
+      }
+      const r=e.obj;
+      return `<tr><td><b>${esc(r.cargo)}</b></td><td>${fmtDate(r.date)}</td><td>v${r.currentVersion}</td><td>${currentReportItems(r).length}</td><td>${esc(r.versions[r.versions.length-1].user)}</td><td>${esc(r.status)}</td><td><button class="btn small" data-hview="${r.id}">Ver contenido</button><button class="btn small" data-hversions="${r.id}">Versiones</button><button class="btn small" data-download="${r.id}">Descargar</button><button class="btn small" data-correct="${r.id}">Corregir reporte</button></td></tr>`;
+    }).join('')||'<tr><td colspan="7" class="empty-row">No hay reportes confirmados ni regularizaciones.</td></tr>';
     $$('[data-hview]').forEach(b=>b.onclick=()=>{const r=state.reports.find(x=>x.id===b.dataset.hview); if(r) showReportVersionPreview(r,getReportVersion(r,r.currentVersion));});
     $$('[data-hversions]').forEach(b=>b.onclick=()=>showHistoryDetail(state.reports.find(x=>x.id===b.dataset.hversions)));
     $$('[data-download]').forEach(b=>b.onclick=()=>downloadReportXlsx(state.reports.find(x=>x.id===b.dataset.download)));
     $$('[data-correct]').forEach(b=>b.onclick=()=>startCorrection(state.reports.find(x=>x.id===b.dataset.correct)));
+    $$('[data-reg-view]').forEach(b=>b.onclick=()=>showRegularizationPreview(ensureRegularizations().find(x=>x.id===b.dataset.regView)));
   }
   function showHistoryDetail(r){
     const d=$('#historyDetail'); d.classList.remove('hidden'); d.innerHTML=`<div class="section-head"><div><div class="eyebrow">${esc(r.cargo)}</div><h3>Historial de versiones</h3></div></div>${r.versions.slice().reverse().map(v=>`<div class="version-card"><div><b>Versión ${v.version}</b> <span class="status ${v.status==='Vigente'?'completo':'warning'}">${v.status}</span><br><small>${new Date(v.at).toLocaleString('es-PE')} · ${esc(v.user)} · ${esc(v.reason)}</small></div><div class="version-actions"><strong>${v.items.length} ítems</strong><button class="btn small" data-version-view="${v.version}">Ver contenido</button><button class="btn small" data-version-download="${v.version}">Descargar Excel</button></div></div>`).join('')}`;
     $$('[data-version-view]',d).forEach(b=>b.onclick=()=>showReportVersionPreview(r,getReportVersion(r,b.dataset.version)));
     $$('[data-version-download]',d).forEach(b=>b.onclick=()=>downloadReportXlsx(r,getReportVersion(r,b.dataset.version)));
   }
+  function historyContentValue(it,key){
+    if(key==='gr')return it.kind==='loose'?'DOCUMENTACIÓN NO ASOCIADA':it.gr||'—';
+    if(key==='grt')return it.kind==='loose'?'—':it.grt||'—';
+    if(key==='order')return it.kind==='loose'?'—':it.order||'—';
+    if(key==='type')return it.kind==='loose'?'Otros':it.type||'—';
+    if(key==='result')return it.kind==='loose'?'—':it.resultAtSend||'—';
+    if(key==='obs')return it.obs||'—';
+    return '—';
+  }
   function showReportVersionPreview(report,versionObj){
     if(!versionObj)return;
     const date=(versionObj.items[0]&&versionObj.items[0].deliveryDate)||report.date;
-    const rowHtml=it=>it.kind==='loose'?`<tr data-cargo-search-row=""><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(it.obs||'—')}</td></tr>`:`<tr data-cargo-search-row="${esc([it.gr,it.grt,it.order].join(' ').toLowerCase())}"><td><b>${esc(it.gr)}</b></td><td>${esc(it.grt)}</td><td>${esc(it.order)}</td><td>${esc(it.type)}</td><td>${esc(it.resultAtSend||'—')}</td><td>${esc(it.obs||'—')}</td></tr>`;
-    const rows=versionObj.items.map(rowHtml).join('');
-    const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(report.cargo)}</b></div><div><span>VERSIÓN</span><b>v${versionObj.version} · ${esc(versionObj.status)}</b></div><div><span>FECHA</span><b>${fmtDate(date)}</b></div></div><div class="callout">Vista histórica de solo lectura. Este contenido queda conservado aunque exista una versión corregida.</div><div class="cargo-content-search"><div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="cargoContentSearch" placeholder="Buscar…" autocomplete="off"></div></div><div class="table-wrap"><table><thead><tr><th>GR</th><th>GRT</th><th>Pedido</th><th>Tipo</th><th>Resultado al enviar</th><th>OBS DE CONFORMIDAD</th></tr></thead><tbody id="cargoContentRows">${rows}</tbody></table></div><div class="modal-actions"><button class="btn" id="closeVersionPreview">Cerrar</button><button class="btn primary" id="downloadVersionPreview">Descargar esta versión</button></div>`;
+    const items=versionObj.items.slice();
+    const html=`<div class="report-meta"><div><span>CARGO</span><b>${esc(report.cargo)}</b></div><div><span>VERSIÓN</span><b>v${versionObj.version} · ${esc(versionObj.status)}</b></div><div><span>FECHA</span><b>${fmtDate(date)}</b></div></div><div class="callout">Vista histórica de solo lectura. Este contenido queda conservado aunque exista una versión corregida.</div><div class="cargo-content-search"><div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="cargoContentSearch" placeholder="Buscar…" autocomplete="off"></div></div><div class="table-wrap"><table class="history-content-table"><thead><tr>
+      <th class="excel-filter-th" data-xf-scope="historyContent" data-xf-key="gr"><button class="excel-filter-btn" type="button" data-xf-scope="historyContent" data-xf-open="gr">GR <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyContent" data-xf-key="grt"><button class="excel-filter-btn" type="button" data-xf-scope="historyContent" data-xf-open="grt">GRT <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyContent" data-xf-key="order"><button class="excel-filter-btn" type="button" data-xf-scope="historyContent" data-xf-open="order">Pedido <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyContent" data-xf-key="type"><button class="excel-filter-btn" type="button" data-xf-scope="historyContent" data-xf-open="type">Tipo <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyContent" data-xf-key="result"><button class="excel-filter-btn" type="button" data-xf-scope="historyContent" data-xf-open="result">Resultado al enviar <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyContent" data-xf-key="obs"><button class="excel-filter-btn" type="button" data-xf-scope="historyContent" data-xf-open="obs">OBS DE CONFORMIDAD <span>▼</span></button></th>
+      </tr></thead><tbody id="cargoContentRows"></tbody></table></div><div class="modal-actions"><button class="btn" id="closeVersionPreview">Cerrar</button><button class="btn primary" id="downloadVersionPreview">Descargar esta versión</button></div>`;
     openModal(`Contenido ${report.cargo} · v${versionObj.version}`,`${new Date(versionObj.at).toLocaleString('es-PE')} · ${versionObj.user} · ${versionObj.reason}`,html,'report-modal');
-    $('#cargoContentSearch').addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();$$('[data-cargo-search-row]',$('#cargoContentRows')).forEach(tr=>tr.classList.toggle('hidden',!!q&&!String(tr.dataset.cargoSearchRow||'').includes(q)));});
+    const searchRows=()=>{const q=String($('#cargoContentSearch')?.value||'').trim().toLowerCase();return items.filter(it=>!q||[it.gr,it.grt,it.order].join(' ').toLowerCase().includes(q));};
+    const renderRows=()=>{
+      const rows=excelFilteredRows('historyContent');
+      $('#cargoContentRows').innerHTML=rows.map(it=>it.kind==='loose'?`<tr><td><b>DOCUMENTACIÓN NO ASOCIADA</b></td><td>—</td><td>—</td><td>Otros</td><td>—</td><td>${esc(it.obs||'—')}</td></tr>`:`<tr><td><b>${esc(it.gr)}</b></td><td>${esc(it.grt)}</td><td>${esc(it.order)}</td><td>${esc(it.type)}</td><td>${esc(it.resultAtSend||'—')}</td><td>${esc(it.obs||'—')}</td></tr>`).join('')||'<tr><td colspan="6" class="empty-row">No hay ítems con estos filtros.</td></tr>';
+      updateExcelFilterHeaderStates('historyContent');
+    };
+    registerExcelFilterScope('historyContent',{keys:['gr','grt','order','type','result','obs'],dateKeys:[],labels:{gr:'GR',grt:'GRT',order:'Pedido',type:'Tipo',result:'Resultado al enviar',obs:'OBS DE CONFORMIDAD'},baseRows:searchRows,value:historyContentValue,onChange:renderRows},true);
+    $('#cargoContentSearch').addEventListener('input',renderRows);
+    renderRows();
     $('#closeVersionPreview').onclick=closeModal; $('#downloadVersionPreview').onclick=()=>downloadReportXlsx(report,versionObj);
+  }
+  function showRegularizationPreview(reg){
+    if(!reg)return;
+    const items=(reg.items||[]).slice();
+    const html=`<div class="report-meta"><div><span>ORIGEN</span><b>REGULARIZACIÓN</b></div><div><span>CARGO ANTIGUO</span><b>${esc(reg.cargo||'No indicado')}</b></div><div><span>FECHA LIQUIDACIÓN</span><b>${fmtDate(reg.date)}</b></div></div><div class="callout regularization-callout"><b>Registro histórico.</b> Esta liquidación proviene del control Excel anterior y no corresponde a un reporte generado por este sistema.<br><small>${esc(reg.reason||'—')} · Registrado por ${esc(reg.user||'—')} el ${new Date(reg.at).toLocaleString('es-PE')}</small></div><div class="cargo-content-search"><div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="regularizationContentSearch" placeholder="Buscar…" autocomplete="off"></div></div><div class="table-wrap"><table class="history-content-table"><thead><tr>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="gr"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="gr">GR <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="grt"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="grt">GRT <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="order"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="order">Pedido <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="recipient"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="recipient">Destinatario <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="district"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="district">Distrito <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="type"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="type">Tipo <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="resultBefore"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="resultBefore">Estado previo <span>▼</span></button></th>
+      <th class="excel-filter-th" data-xf-scope="historyRegularization" data-xf-key="docs"><button class="excel-filter-btn" type="button" data-xf-scope="historyRegularization" data-xf-open="docs">Docs registrados <span>▼</span></button></th>
+      </tr></thead><tbody id="regularizationContentRows"></tbody></table></div><div class="modal-actions"><button class="btn" id="closeRegularizationPreview">Cerrar</button></div>`;
+    openModal(`Regularización ${reg.cargo||fmtDate(reg.date)}`,'Liquidación histórica registrada desde el control anterior.',html,'report-modal');
+    const baseRows=()=>{const q=String($('#regularizationContentSearch')?.value||'').trim().toLowerCase();return items.filter(it=>!q||[it.gr,it.grt,it.order].join(' ').toLowerCase().includes(q));};
+    const val=(it,key)=>it[key]||'—';
+    const renderRows=()=>{const rows=excelFilteredRows('historyRegularization');$('#regularizationContentRows').innerHTML=rows.map(it=>`<tr><td><b>${esc(it.gr||'—')}</b></td><td>${esc(it.grt||'—')}</td><td>${esc(it.order||'—')}</td><td>${esc(it.recipient||'—')}</td><td>${esc(it.district||'—')}</td><td>${esc(it.type||'—')}</td><td>${esc(it.resultBefore||'—')}</td><td>${esc(it.docs||'—')}</td></tr>`).join('')||'<tr><td colspan="8" class="empty-row">No hay ítems con estos filtros.</td></tr>';updateExcelFilterHeaderStates('historyRegularization');};
+    registerExcelFilterScope('historyRegularization',{keys:['gr','grt','order','recipient','district','type','resultBefore','docs'],dateKeys:[],labels:{gr:'GR',grt:'GRT',order:'Pedido',recipient:'Destinatario',district:'Distrito',type:'Tipo',resultBefore:'Estado previo',docs:'Docs registrados'},baseRows,value:val,onChange:renderRows},true);
+    $('#regularizationContentSearch').addEventListener('input',renderRows);renderRows();$('#closeRegularizationPreview').onclick=closeModal;
   }
   function startCorrection(report){
     const draft={date:report.date,cargo:report.cargo}; showReportPreview(draft,true,report);
@@ -1352,7 +1590,9 @@
   let indicatorDrill='all', indicatorDrillZone='';
   function indicatorReportDates(r){
     const ids=new Set((r.receipts||[]).filter(x=>!x.annulled&&x.sentReportId).map(x=>x.sentReportId));
-    return (state.reports||[]).filter(p=>ids.has(p.id)||currentReportItems(p).some(it=>it.recordId===r.id)).map(p=>({date:normalDate(p.date),cargo:p.cargo})).filter(x=>x.date);
+    const reports=(state.reports||[]).filter(p=>ids.has(p.id)||currentReportItems(p).some(it=>it.recordId===r.id)).map(p=>({date:normalDate(p.date),cargo:p.cargo,kind:'report'}));
+    const regs=ensureRegularizations().filter(reg=>(reg.items||[]).some(it=>String(it.recordId)===String(r.id))).map(reg=>({date:normalDate(reg.date),cargo:reg.cargo||'Regularización histórica',kind:'regularization'}));
+    return [...reports,...regs].filter(x=>x.date);
   }
   function periodIncludes(d){if(!d)return false;const f=$('#indicatorFrom').value,t=$('#indicatorTo').value;return (!f||d>=f)&&(!t||d<=t);}
   function indicatorRecords(){const z=$('#indicatorZone').value;return allOperational().filter(r=>(!z||String(r.district||'')===z)&&periodIncludes(normalDate(r.guideDate)));}
@@ -1381,7 +1621,7 @@
   ['indicatorView','indicatorFrom','indicatorTo','indicatorZone'].forEach(id=>$('#'+id).addEventListener('change',()=>{indicatorDrill='all';indicatorDrillZone='';renderIndicators();}));
   $('#indicatorReset').onclick=()=>{$('#indicatorFrom').value='';$('#indicatorTo').value='';$('#indicatorZone').value='';indicatorDrill='all';indicatorDrillZone='';renderIndicators();};
   $('#indicatorExport').onclick=()=>{if(typeof XLSX==='undefined'){toast('No se pudo cargar el módulo Excel.',true);return;}const data=window.__rocheIndicatorExport;const summary=data.counts.map(([indicador,valor])=>({Indicador:indicador,Valor:valor}));const detail=data.rows.map(m=>({'Fecha emisión':m.issue,'Ubigeo / zona Roche':m.r.district,'GR Roche':m.r.gr,'GRT':m.r.grt,'Destinatario':m.r.recipient,'Estado':m.r.liquidated?'Liquidada':m.r.result,'Primera recepción Lima':m.first,'Último envío Signia':m.sent.map(x=>x.date).sort().at(-1)||'','Días sin liquidar':m.r.liquidated?'':m.age??'','Docs pendientes de envío':m.unsent?'Sí':'No'}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'RESUMEN');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(detail.length?detail:[{'GR Roche':'Sin registros'}]),'DETALLE GR');XLSX.writeFile(wb,'ROCHE_INDICADORES_'+new Date().toISOString().slice(0,10)+'.xlsx');};
-  function renderAll(){ renderBadges(); renderPending(); renderReady(); renderGeneral(); renderClosed(); renderHistory(); renderImport(); renderIndicators(); requestAnimationFrame(updateFloatingHScroll); }
+  function renderAll(){ ensureRegularizations(); renderBadges(); renderPending(); renderReady(); renderGeneral(); renderClosed(); renderHistory(); renderImport(); renderIndicators(); requestAnimationFrame(updateFloatingHScroll); }
 
   async function initWebApp(){
     $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden');

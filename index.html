@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.9 Web · Tradel</title>
-  <link rel="stylesheet" href="styles.css?v=229" />
+  <title>Roche V2.2.10 Web · Tradel</title>
+  <link rel="stylesheet" href="styles.css?v=2210a" />
 </head>
 <body>
   <div id="loginView" class="screen login-screen">
@@ -29,7 +29,7 @@
     <aside class="sidebar">
       <div class="side-brand">
         <img src="logo_tradel.png" alt="Tradel Service" />
-        <div><strong>Roche V2.2.9 Web</strong><span>Seguimiento documental</span></div>
+        <div><strong>Roche V2.2.10 Web</strong><span>Seguimiento documental</span></div>
       </div>
       <nav class="nav">
         <button class="nav-btn active" data-page="quick">⚡ Registro rápido</button>
@@ -92,6 +92,7 @@
           <div class="field"><label>Resultado</label><select id="statusFilter"><option value="">Todos</option><option>Pendiente</option><option>Parcial</option></select></div>
           <div class="field"><label>Docs por enviar</label><select id="unsentFilter"><option value="">Todos</option><option value="yes">Sí</option><option value="no">No</option></select></div>
           <button id="clearPendingFilters" class="btn">Limpiar</button>
+          <button class="btn regularization-action" id="regularizeHistoricalBtn" type="button" title="Para guías ya liquidadas en el Excel anterior">Regularizar liquidación histórica</button>
         </div>
         <div class="table-wrap panel">
           <table class="wide-table">
@@ -151,7 +152,23 @@
         </div>
         <div class="table-wrap panel">
           <table class="wide-table">
-            <thead><tr><th>Fecha guía</th><th>Distrito</th><th>HR</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>GRT</th><th>GR cliente</th><th>Tipo</th><th>Resultado</th><th>Estado final</th><th>Documentación acumulada</th><th>Docs por enviar</th><th>Observaciones</th><th>Ver</th></tr></thead>
+            <thead><tr>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="guideDate"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="guideDate">Fecha guía <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="district"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="district">Distrito <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="route"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="route">HR <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="order"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="order">Pedido <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="recipient"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="recipient">Destinatario <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="address"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="address">Dirección <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="grt"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="grt">GRT <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="gr"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="gr">GR cliente <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="type"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="type">Tipo <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="result"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="result">Resultado <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="finalState"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="finalState">Estado final <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="docs"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="docs">Documentación acumulada <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="unsent"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="unsent">Docs por enviar <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="general" data-xf-key="observations"><button class="excel-filter-btn" type="button" data-xf-scope="general" data-xf-open="observations">Observaciones <span>▼</span></button></th>
+              <th>Ver</th>
+            </tr></thead>
             <tbody id="generalTableBody"></tbody>
           </table>
         </div>
@@ -160,7 +177,7 @@
       <section id="page-history" class="page hidden">
         <div class="table-wrap panel">
           <table>
-            <thead><tr><th>Cargo</th><th>Fecha entrega</th><th>Versión vigente</th><th>Ítems</th><th>Confirmado por</th><th>Estado</th><th>Acciones</th></tr></thead>
+            <thead><tr><th>Cargo / origen</th><th>Fecha</th><th>Versión vigente</th><th>Ítems</th><th>Confirmado por</th><th>Estado</th><th>Acciones</th></tr></thead>
             <tbody id="historyTableBody"></tbody>
           </table>
         </div>
@@ -168,12 +185,24 @@
       </section>
 
       <section id="page-closed" class="page hidden">
-        <div class="panel toolbar compact-toolbar">
+        <div class="panel toolbar compact-toolbar closed-toolbar">
           <div class="field grow"><label>Buscar GRT / GR / Pedido</label><input id="closedSearch" placeholder="Buscar…" autocomplete="off" /></div>
         </div>
         <div class="table-wrap panel">
           <table class="wide-table">
-            <thead><tr><th>Fecha liquidación</th><th>GRT</th><th>GR cliente</th><th>Pedido</th><th>Destinatario</th><th>Dirección</th><th>Distrito</th><th>Tipo</th><th>Documentación final</th><th>Cargo</th><th>Ver</th></tr></thead>
+            <thead><tr>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="liquidatedAt"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="liquidatedAt">Fecha liquidación <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="grt"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="grt">GRT <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="gr"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="gr">GR cliente <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="order"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="order">Pedido <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="recipient"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="recipient">Destinatario <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="address"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="address">Dirección <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="district"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="district">Distrito <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="type"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="type">Tipo <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="docs"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="docs">Documentación final <span>▼</span></button></th>
+              <th class="excel-filter-th" data-xf-scope="closed" data-xf-key="cargo"><button class="excel-filter-btn" type="button" data-xf-scope="closed" data-xf-open="cargo">Cargo / origen <span>▼</span></button></th>
+              <th>Ver</th>
+            </tr></thead>
             <tbody id="closedTableBody"></tbody>
           </table>
         </div>
@@ -202,6 +231,8 @@
         </div>
       </section>
 
+      <div id="tableExcelFilterPopover" class="column-filter-popover hidden"></div>
+
       <div id="modalBackdrop" class="modal-backdrop hidden">
         <div id="modal" class="modal">
           <div class="modal-head"><div><div class="eyebrow" id="modalEyebrow">OPERACIÓN</div><h3 id="modalTitle"></h3><p id="modalSubtitle" class="muted"></p></div><button id="modalClose" class="icon-btn" aria-label="Cerrar">×</button></div>
@@ -219,6 +250,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
-  <script src="app.js?v=229"></script>
+  <script src="app.js?v=2210a"></script>
 </body>
 </html>

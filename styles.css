@@ -107,3 +107,35 @@ h1,h2,h3,h4{margin:0 0 8px;line-height:1.15}.login-screen{display:grid;place-ite
 
 /* V2.2.9 · filtros dependientes estilo Excel + buscador visible en Corregir reporte */
 .report-correction-search{display:flex;align-items:flex-end;gap:12px;margin:14px 0;padding:12px 14px;border:1px solid #d9e2f2;border-radius:10px;background:#f8faff}.report-correction-search .field{width:min(560px,100%);margin:0}.report-correction-search label{display:block;font-weight:800;color:#475467;margin-bottom:6px}.report-correction-search input{width:100%}.report-correction-count{margin-left:auto;padding:0 4px 9px;color:#667085;font-size:12px;font-weight:700;white-space:nowrap}.correction-report-table tr.hidden{display:none!important}
+
+/* V2.2.10 · filtros Excel en Reporte general / Liquidados / Historial + regularización histórica */
+#page-general .wide-table{min-width:2150px!important;table-layout:auto}
+#page-closed .wide-table{min-width:1700px!important;table-layout:auto}
+#page-general .excel-filter-btn,#page-closed .excel-filter-btn,.history-content-table .excel-filter-btn{border-radius:0;line-height:1.2;min-height:42px}
+#page-general .excel-filter-btn:hover,#page-closed .excel-filter-btn:hover,.history-content-table .excel-filter-btn:hover{background:#eef3ff;color:#2446a8}
+#page-general .excel-filter-th[data-xf-key="guideDate"],#page-closed .excel-filter-th[data-xf-key="liquidatedAt"]{min-width:118px}
+#page-general .excel-filter-th[data-xf-key="district"],#page-closed .excel-filter-th[data-xf-key="district"]{min-width:150px}
+#page-general .excel-filter-th[data-xf-key="route"]{min-width:105px}
+#page-general .excel-filter-th[data-xf-key="order"],#page-closed .excel-filter-th[data-xf-key="order"]{min-width:105px}
+#page-general .excel-filter-th[data-xf-key="recipient"],#page-closed .excel-filter-th[data-xf-key="recipient"]{min-width:190px}
+#page-general .excel-filter-th[data-xf-key="address"],#page-closed .excel-filter-th[data-xf-key="address"]{min-width:250px}
+#page-general .excel-filter-th[data-xf-key="grt"],#page-closed .excel-filter-th[data-xf-key="grt"]{min-width:115px}
+#page-general .excel-filter-th[data-xf-key="gr"],#page-closed .excel-filter-th[data-xf-key="gr"]{min-width:145px}
+#page-general .excel-filter-th[data-xf-key="type"],#page-closed .excel-filter-th[data-xf-key="type"]{min-width:150px}
+#page-general .excel-filter-th[data-xf-key="result"]{min-width:120px}
+#page-general .excel-filter-th[data-xf-key="finalState"]{min-width:120px}
+#page-general .excel-filter-th[data-xf-key="docs"],#page-closed .excel-filter-th[data-xf-key="docs"]{min-width:205px}
+#page-general .excel-filter-th[data-xf-key="unsent"]{min-width:120px}
+#page-general .excel-filter-th[data-xf-key="observations"]{min-width:235px}
+#page-closed .excel-filter-th[data-xf-key="cargo"]{min-width:175px}
+.closed-toolbar{gap:12px;flex-wrap:wrap}.closed-toolbar #regularizeHistoricalBtn{white-space:nowrap}
+.regularization-tag{display:inline-flex;align-items:center;padding:3px 7px;border-radius:999px;background:#fff4e5;color:#9a5200;font-size:10.5px;font-weight:850;white-space:nowrap;border:1px solid #ffd7a8}
+.regularization-history-row td{background:#fffcf7}.regularization-history-row:hover td{background:#fff8ec!important}
+.regularization-callout{border-left-color:#f79009!important;background:#fffaf2!important}
+.regularization-fields{margin:14px 0}.regularization-toolbar{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:12px 0}.regularization-toolbar .grow{min-width:320px;flex:1}.regularization-toolbar strong{padding:0 4px 9px;color:#475467;white-space:nowrap}
+.regularization-table{max-height:430px}.regularization-table table{min-width:1050px}.regularization-table th:first-child,.regularization-table td:first-child{width:42px;text-align:center}
+.history-content-table{min-width:1080px!important}.history-content-table .excel-filter-th{min-width:125px}.history-content-table .excel-filter-th[data-xf-key="obs"]{min-width:260px}.history-content-table .excel-filter-th[data-xf-key="recipient"]{min-width:190px}.history-content-table .excel-filter-th[data-xf-key="district"]{min-width:150px}.history-content-table .excel-filter-th[data-xf-key="docs"]{min-width:200px}
+
+/* Ajuste V2.2.10: regularización se inicia desde Pendientes / Parciales */
+.pending-top-filters .regularization-action{white-space:nowrap;border-color:#f79009;color:#9a5200;background:#fffaf2}
+.pending-top-filters .regularization-action:hover{background:#fff4e5}
