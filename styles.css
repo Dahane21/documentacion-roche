@@ -139,3 +139,151 @@ h1,h2,h3,h4{margin:0 0 8px;line-height:1.15}.login-screen{display:grid;place-ite
 /* Ajuste V2.2.10: regularización se inicia desde Pendientes / Parciales */
 .pending-top-filters .regularization-action{white-space:nowrap;border-color:#f79009;color:#9a5200;background:#fffaf2}
 .pending-top-filters .regularization-action:hover{background:#fff4e5}
+
+/* ==========================================================
+   V2.2.11 · Identidad visual Tradel Service
+   Rediseño visual únicamente. No altera la lógica funcional.
+   ========================================================== */
+:root{
+  --bg:#f3f4f6;
+  --panel:#ffffff;
+  --text:#20242a;
+  --muted:#6c737c;
+  --border:#d5d9de;
+  --accent:#e5322d;
+  --accent2:#bd211d;
+  --accent-soft:#fff0ef;
+  --danger:#b42318;
+  --danger-soft:#fff1f0;
+  --ok:#16784a;
+  --ok-soft:#edf8f2;
+  --warn:#b55b08;
+  --warn-soft:#fff4e8;
+  --dark:#252a2f;
+  --dark2:#1f2327;
+  --shadow:0 8px 24px rgba(20,24,28,.12);
+}
+body{background:var(--bg);color:var(--text)}
+
+/* Login institucional */
+.login-screen{background:linear-gradient(135deg,#f4f5f6 0%,#e8eaed 100%)}
+.login-card{border-radius:7px;border:1px solid #cfd3d7;border-top:6px solid var(--accent);box-shadow:0 14px 35px rgba(22,26,30,.16);padding:34px 38px}
+.login-logo{width:285px;max-width:82%;margin:0 auto 22px;display:block}
+.login-card h1{text-align:center;font-size:25px;color:#22272c}
+.login-card>.eyebrow{text-align:center;color:var(--accent);font-weight:900}
+.login-card>p{text-align:center}
+.web-login-form label{color:#4b5158}
+.web-login-form input{border-radius:4px;border-color:#bfc5cb;padding:13px 14px}
+.web-login-form input:focus{outline:2px solid rgba(229,50,45,.20);border-color:var(--accent)}
+
+/* Estructura general */
+.app{grid-template-columns:252px minmax(0,1fr);background:var(--bg)}
+.sidebar{background:var(--dark);border-right:0;padding:0;gap:0;box-shadow:2px 0 10px rgba(0,0,0,.12)}
+.side-brand{height:92px;background:var(--accent);padding:15px 16px;gap:12px;border-bottom:1px solid rgba(255,255,255,.18)}
+.side-brand img{width:150px;height:56px;object-fit:contain;filter:brightness(0) invert(1)}
+.side-brand strong{font-size:13px;color:#fff;letter-spacing:.05em}
+.side-brand span{font-size:10px;color:rgba(255,255,255,.78);margin-top:3px}
+.nav{padding:12px 9px 16px;gap:3px;overflow:auto}
+.nav-section-label{color:#92979d;font-size:10px;font-weight:900;letter-spacing:.09em;padding:13px 11px 6px;text-transform:uppercase}
+.nav-btn{color:#e5e7e9;border-radius:5px;padding:10px 11px;font-weight:600;display:flex;align-items:center;gap:8px;transition:.15s ease}
+.nav-btn:hover{background:#343a40;color:#fff}
+.nav-btn.active{background:var(--accent);color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #fff}
+.nav-icon{display:inline-flex;align-items:center;justify-content:center;width:19px;min-width:19px;font-size:16px;line-height:1;color:inherit}
+.sidebar .badge{margin-left:auto;background:#3b4249;color:#fff;border:1px solid rgba(255,255,255,.09)}
+.sidebar .nav-btn.active .badge{background:#fff;color:var(--accent);border-color:#fff}
+.sidebar .partial-nav-badge{margin-left:2px;background:#f59e0b!important;color:#fff!important;border:0!important}
+.sidebar .warn-badge{background:#f59e0b;color:#fff;border:0}
+.sidebar-footer{margin-top:auto;border-top:1px solid #3a4046;padding:14px 16px 17px;background:var(--dark2)}
+.sidebar-footer .muted{color:#9aa0a6}.user-name{color:#fff}.sidebar-footer .link-btn{color:#fff;font-weight:700}
+
+/* Barra roja superior tipo apps Tradel */
+.main{padding:0 22px 22px;background:var(--bg)}
+.topbar{min-height:58px;margin:0 -22px 18px;padding:8px 22px;background:var(--accent);color:#fff;box-shadow:0 2px 7px rgba(0,0,0,.14);position:sticky;top:0;z-index:55}
+.topbar h2{color:#fff;margin:0;font-size:18px;font-weight:850}
+.topbar .eyebrow{color:rgba(255,255,255,.78);font-size:9px;margin-bottom:2px}
+.top-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.topbar .btn{background:#fff;border-color:#d7dadd;color:#2b3035;border-radius:4px;min-height:34px;font-weight:700}
+.topbar .btn:hover{background:#f4f4f4}
+.topbar .sync-status{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;border-radius:4px;padding:7px 10px}
+
+/* Contenedores y tarjetas más corporativos */
+.panel,.stat{border-radius:5px;border-color:#d2d6da;box-shadow:none}
+.panel{padding:14px;margin-bottom:12px}
+.stats{gap:9px}.stat{padding:13px 14px;border-top:3px solid #dfe2e5}.stat-filter:hover{border-color:#c8ccd0;border-top-color:var(--accent)}
+.stat strong{font-size:23px;color:#20252a}.accent-stat{background:#fff7f6;border-color:#efc4c1;border-top-color:var(--accent)}
+.warn-stat{border-top-color:#f59e0b}
+.callout{border-left-color:var(--accent);background:#fff5f4;border-radius:4px}
+
+/* Formularios */
+.field input,.field select,input,select,textarea{border-radius:4px;border-color:#c9ced3;background:#fff}
+.field input:focus,.field select:focus,input:focus,select:focus,textarea:focus{outline:2px solid rgba(229,50,45,.18);outline-offset:1px;border-color:var(--accent)}
+.fixed-value strong{border-radius:4px}
+
+/* Botones */
+.btn{border-radius:4px;font-weight:700;min-height:39px}
+.btn:hover{background:#f2f3f4}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent2);border-color:var(--accent2)}
+.btn.success{background:#21875a;border-color:#21875a}
+.btn.warn{background:#fff7ed;border-color:#f0bd84;color:#99500c}
+.btn.danger-outline{border-color:#e5a3a0;color:#b42318}
+.action-btn{border-radius:4px}.action-btn.primary{color:var(--accent);border-color:#e5aaa7;background:#fff6f5}
+.link-btn{color:var(--accent)}
+.pending-top-filters .regularization-action{border-color:#d8893f;color:#8b4809;background:#fff8ef}
+
+/* Tablas */
+.table-wrap{border-radius:5px;background:#fff}
+.table-wrap th{background:#eceff1;color:#31363b;font-weight:850;letter-spacing:.025em;border-bottom:1px solid #cfd4d8}
+.table-wrap td{border-bottom-color:#e4e7ea}
+.table-wrap tr:hover td{background:#fff8f7}
+.excel-filter-btn{color:#30353a}
+.excel-filter-btn:hover,#page-pending .excel-filter-btn:hover,#page-general .excel-filter-btn:hover,#page-closed .excel-filter-btn:hover,.history-content-table .excel-filter-btn:hover{background:#fce9e8;color:#b72420}
+.excel-filter-th.filtered{background:#fde9e8!important;box-shadow:inset 0 -3px 0 var(--accent)}
+.excel-filter-th.filtered .excel-filter-btn,.excel-filter-th.filtered .excel-filter-btn span{color:#b72420}
+
+/* Filtros flotantes estilo Excel, alineados con la identidad */
+.column-filter-popover{border-radius:5px;border-color:#bfc5ca;box-shadow:0 12px 30px rgba(18,22,26,.22)}
+.column-filter-title{color:#2b3035}.column-filter-option:hover{background:#fff0ef}
+.column-filter-actions .btn.primary{background:var(--accent);border-color:var(--accent)}
+.has-active-filters{border-color:#e39b97!important;background:#fff0ef!important;color:#b72420!important}
+
+/* Estados */
+.status.complete,.status.completo{background:#e8f6ee;color:#17643f}
+.status.partial,.status.parcial{background:#fff3e7;color:#a55408}
+.status.pending,.status.pendiente{background:#edf0f2;color:#4e565d}
+.status.cancelled{background:#fdeceb;color:#a12822}
+.pill.blue,.type-pill{background:#fff0ef;color:#b72420}
+.extra-tag{background:#fff0ef;color:#a92824;border-color:#efc0bd}
+
+/* Registro rápido */
+.quick-hero{padding:20px;border-top:4px solid var(--accent)}
+.quick-hero h3{font-size:21px}.quick-search{border-radius:4px!important}
+.match-card,.match-row,.card,.readonly-item,.doc-control,.package-toolbar,.package-table-wrap,.count-box,.accumulated-box,.history-version,.version-card,.receipt-status-card{border-radius:5px}
+.match-row:hover{border-color:#e39b97;background:#fff7f6}
+
+/* Modales con cabecera roja tipo formulario Tradel */
+.modal{border-radius:6px;padding:0 18px 18px;box-shadow:0 20px 54px rgba(0,0,0,.28)}
+.modal-head{margin:0 -18px 14px;padding:12px 16px;background:var(--accent);color:#fff;top:0;border-radius:6px 6px 0 0;align-items:flex-start}
+.modal-head h3{color:#fff;margin:0}.modal-head .eyebrow,.modal-head .muted{color:rgba(255,255,255,.82)}
+.modal-head .icon-btn{background:#fff;color:#2c3136;width:34px;height:34px;font-size:22px}
+.modal-actions{margin-left:-18px;margin-right:-18px;padding:12px 18px 0;border-top:1px solid #e1e4e7}
+.report-correction-search{border-radius:4px;background:#fff7f6;border-color:#efc3c0}
+
+/* Segmented y componentes activos */
+.segmented{border-radius:4px}.segmented button.active{background:var(--accent)}
+.type-btn{border-radius:5px}.type-btn:hover,.type-btn.active,.type-btn.selected{border-color:var(--accent);background:#fff0ef;color:#b72420}
+.multi-select-btn,.multi-select-menu{border-radius:4px}.multi-select-btn.has-selection{border-color:#e39b97;background:#fff7f6;color:#b72420}
+.multi-select-option:hover{background:#fff0ef}
+
+/* Indicadores */
+.indicator-card{border-radius:5px;border-top:3px solid #d7dade}.indicator-card:hover{border-top-color:var(--accent)}
+.indicator-card strong{color:#272c31}.indicator-card.selected{outline:2px solid var(--accent);border-top-color:var(--accent)}
+
+/* Barra horizontal */
+.floating-hscroll{border-radius:4px}
+
+/* Responsive */
+@media(max-width:900px){
+  .main{padding:0 14px 14px}.topbar{margin:0 -14px 14px;padding:9px 14px;position:static}.sidebar{background:var(--dark)}
+  .nav{padding:8px;flex-direction:row}.nav-section-label{display:none}.nav-btn{white-space:nowrap}.side-brand{display:none}.sidebar-footer{display:none}
+}

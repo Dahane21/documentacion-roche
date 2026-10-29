@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.10 Web · Tradel</title>
-  <link rel="stylesheet" href="styles.css?v=2210a" />
+  <title>Roche V2.2.11 Web · Tradel</title>
+  <link rel="stylesheet" href="styles.css?v=2211" />
 </head>
 <body>
   <div id="loginView" class="screen login-screen">
@@ -29,17 +29,20 @@
     <aside class="sidebar">
       <div class="side-brand">
         <img src="logo_tradel.png" alt="Tradel Service" />
-        <div><strong>Roche V2.2.10 Web</strong><span>Seguimiento documental</span></div>
+        <div><strong>ROCHE</strong><span>Seguimiento documental</span></div>
       </div>
       <nav class="nav">
-        <button class="nav-btn active" data-page="quick">⚡ Registro rápido</button>
-        <button class="nav-btn" data-page="pending">Pendientes / Parciales <span id="pendingBadge" class="badge">0</span><span id="partialSidebarBadge" class="badge partial-nav-badge hidden" title="Guías parciales activas">0</span></button>
-        <button class="nav-btn" data-page="ready">Listos para enviar <span id="readyBadge" class="badge">0</span></button>
-        <button class="nav-btn" data-page="indicators">Indicadores documentarios</button>
-        <button class="nav-btn" data-page="general">Reporte general</button>
-        <button class="nav-btn" data-page="history">Historial Roche</button>
-        <button class="nav-btn" data-page="closed">Liquidados</button>
-        <button class="nav-btn" data-page="import">Importar data <span id="reviewBadge" class="badge warn-badge">0</span></button>
+        <div class="nav-section-label">OPERACIÓN</div>
+        <button class="nav-btn active" data-page="quick"><span class="nav-icon">＋</span> Registro rápido</button>
+        <button class="nav-btn" data-page="pending"><span class="nav-icon">≡</span> Pendientes / Parciales <span id="pendingBadge" class="badge">0</span><span id="partialSidebarBadge" class="badge partial-nav-badge hidden" title="Guías parciales activas">0</span></button>
+        <button class="nav-btn" data-page="ready"><span class="nav-icon">✓</span> Listos para enviar <span id="readyBadge" class="badge">0</span></button>
+        <div class="nav-section-label">ANÁLISIS</div>
+        <button class="nav-btn" data-page="indicators"><span class="nav-icon">▥</span> Indicadores documentarios</button>
+        <button class="nav-btn" data-page="general"><span class="nav-icon">▤</span> Reporte general</button>
+        <button class="nav-btn" data-page="history"><span class="nav-icon">↺</span> Historial Roche</button>
+        <button class="nav-btn" data-page="closed"><span class="nav-icon">✓</span> Liquidados</button>
+        <div class="nav-section-label">DATOS</div>
+        <button class="nav-btn" data-page="import"><span class="nav-icon">⇩</span> Importar data <span id="reviewBadge" class="badge warn-badge">0</span></button>
       </nav>
       <div class="sidebar-footer">
         <div class="tiny muted">Usuario activo</div>
@@ -250,6 +253,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
-  <script src="app.js?v=2210a"></script>
+  <script src="app.js?v=2211"></script>
 </body>
 </html>
