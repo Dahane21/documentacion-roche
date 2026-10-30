@@ -395,19 +395,21 @@
   floatingObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style']});
 
 
-  // ---------- Escaneo rapido continuo de GR ----------
+  // ---------- V2.2.14 · Escaneo rapido SOLO QR ----------
   let grScannerStream=null;
-  let grScannerWorker=null;
   let grScannerBusy=false;
   let grScannerRunning=false;
   let grScannerLoopToken=0;
   let grScannerAccepted=[];
   let grScannerAcceptedSet=new Set();
-  let grScannerLastCandidate='';
-  let grScannerCandidateStreak=0;
   let grScannerCooldownUntil=0;
+  let grScannerQrDetector=null;
+  let grScannerLastQr='';
+  let grScannerLastQrSeenAt=0;
 
   const GR_PREFIXES=['T002','T006','T008','EG07'];
+  const SUNAT_QR_HOST='e-factura.sunat.gob.pe';
+  const SUNAT_QR_PATH='/v1/contribuyente/gre/comprobantes/descargaqr';
 
   function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
@@ -430,42 +432,36 @@
     return map;
   }
 
-  function fixOcrDigits(x){
-    return String(x||'').replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
+  function normalizeGuideFromParts(prefix, serial){
+    prefix=String(prefix||'').toUpperCase();
+    if(!GR_PREFIXES.includes(prefix)) return '';
+    const digits=String(serial||'').replace(/\D/g,'');
+    if(!digits||digits.length>8) return '';
+    return `${prefix}-${digits.padStart(8,'0')}`;
   }
 
-  function normalizeOcrGuideToken(token){
-    let t=String(token||'').toUpperCase().replace(/[–—_]/g,'-').replace(/\s+/g,'');
-    // T002/T006/T008 + 8 digitos, o EG07 + 8 digitos.
-    let m=t.match(/(T[0-9OILSB]{3}|EG[0-9OILSB]{2})-?([0-9OILSB]{8})/);
-    if(!m) return '';
-    let prefix=m[1];
-    if(prefix.startsWith('T')) prefix='T'+fixOcrDigits(prefix.slice(1));
-    else prefix='EG'+fixOcrDigits(prefix.slice(2));
-    const serial=fixOcrDigits(m[2]);
-    const out=`${prefix}-${serial}`;
-    return GR_PREFIXES.includes(prefix)?out:'';
-  }
-
-  function extractOcrGuideCandidates(text){
-    const raw=String(text||'').toUpperCase().replace(/[–—_]/g,'-');
-    const compact=raw.replace(/\s+/g,'');
-    const tokens=[];
-    const re=/(?:T[0-9OILSB]{3}|EG[0-9OILSB]{2})-?[0-9OILSB]{8}/g;
-    for(const source of [raw,compact]){
-      let m;
-      while((m=re.exec(source))!==null){
-        const g=normalizeOcrGuideToken(m[0]);
-        if(g&&!tokens.includes(g)) tokens.push(g);
-      }
-      re.lastIndex=0;
+  function extractGuideFromAnyText(text){
+    const t=String(text||'').toUpperCase().replace(/[–—_]/g,'-');
+    // PDF visible: "N° T002 - 00001625" / filename: "...-T006-107452-PDF.pdf"
+    const re=/(T002|T006|T008|EG07)\s*-?\s*([0-9]{1,8})/g;
+    let m;
+    while((m=re.exec(t))!==null){
+      const g=normalizeGuideFromParts(m[1],m[2]);
+      if(g) return g;
     }
-    return tokens;
+    return '';
+  }
+
+  function isSunatGreQr(payload){
+    try{
+      const u=new URL(String(payload||'').trim());
+      return u.protocol==='https:' && u.hostname===SUNAT_QR_HOST && u.pathname===SUNAT_QR_PATH && !!u.searchParams.get('hashqr');
+    }catch(_e){ return false; }
   }
 
   function scannerAcceptedHtml(){
     if(!grScannerAccepted.length) return '<div class="scanner-empty">Aun no hay guias confirmadas.</div>';
-    return `<div class="scanner-ruma-list">${grScannerAccepted.slice().reverse().map((r,i)=>`<div class="scanner-ruma-row"><span class="scanner-ruma-check">✓</span><div><strong>${esc(r.gr)}</strong><small>${esc(r.grt||'—')} · ${esc(r.recipient||'—')}</small></div></div>`).join('')}</div>`;
+    return `<div class="scanner-ruma-list">${grScannerAccepted.slice().reverse().map(r=>`<div class="scanner-ruma-row"><span class="scanner-ruma-check">✓</span><div><strong>${esc(r.gr)}</strong><small>${esc(r.grt||'—')} · ${esc(r.recipient||'—')}</small></div></div>`).join('')}</div>`;
   }
 
   function updateScannerRuma(){
@@ -490,64 +486,12 @@
       const AC=window.AudioContext||window.webkitAudioContext;
       if(AC){
         const ctx=new AC(); const osc=ctx.createOscillator(); const gain=ctx.createGain();
-        osc.type='sine'; osc.frequency.value=880; gain.gain.value=.08;
+        osc.type='sine'; osc.frequency.value=980; gain.gain.value=.09;
         osc.connect(gain); gain.connect(ctx.destination); osc.start();
-        setTimeout(()=>{ try{osc.stop();ctx.close();}catch(_e){} },110);
+        setTimeout(()=>{ try{osc.stop();ctx.close();}catch(_e){} },95);
       }
     }catch(_e){}
-    try{ if(navigator.vibrate) navigator.vibrate(70); }catch(_e){}
-  }
-
-  async function ensureGrScannerWorker(statusEl){
-    if(grScannerWorker) return grScannerWorker;
-    if(!window.Tesseract) throw new Error('No se pudo cargar el lector OCR. Revisa la conexion a internet.');
-    if(statusEl) statusEl.textContent='Preparando lector por primera vez…';
-    grScannerWorker=await window.Tesseract.createWorker('eng',1,{logger:m=>{
-      if(!statusEl||!m||!grScannerRunning) return;
-      if(m.status==='recognizing text' && typeof m.progress==='number' && m.progress>.35){
-        statusEl.innerHTML=`<strong>Buscando numero de guia…</strong><span>${Math.round(m.progress*100)}%</span>`;
-      }
-    }});
-    await grScannerWorker.setParameters({
-      tessedit_char_whitelist:'TEG0123456789-OILSB',
-      tessedit_pageseg_mode:'7',
-      preserve_interword_spaces:'1'
-    });
-    return grScannerWorker;
-  }
-
-  function captureScannerCrop(video){
-    const vw=video.videoWidth, vh=video.videoHeight;
-    if(!vw||!vh) throw new Error('La camara todavia no esta lista.');
-    const target=$('#grScannerTarget');
-    const vr=video.getBoundingClientRect(); const tr=target?.getBoundingClientRect();
-    let sx=vw*.2, sy=vh*.2, sw=vw*.6, sh=vh*.6;
-    if(target&&vr.width&&vr.height&&tr){
-      const fitScale=Math.max(vr.width/vw,vr.height/vh);
-      const renderedW=vw*fitScale, renderedH=vh*fitScale;
-      const offX=(vr.width-renderedW)/2, offY=(vr.height-renderedH)/2;
-      sx=Math.max(0,(tr.left-vr.left-offX)/fitScale); sy=Math.max(0,(tr.top-vr.top-offY)/fitScale);
-      sw=Math.min(vw-sx,tr.width/fitScale); sh=Math.min(vh-sy,tr.height/fitScale);
-    }
-    sx=Math.round(sx); sy=Math.round(sy); sw=Math.max(1,Math.round(sw)); sh=Math.max(1,Math.round(sh));
-
-    // El marco visible es amplio/cuadrado para apuntar facil. OCR analiza una banda central
-    // suficientemente alta dentro del marco, donde debe quedar el numero de GR.
-    const bandY=Math.round(sy+sh*.39), bandH=Math.round(sh*.22);
-    const outW=Math.min(900,Math.max(620,Math.round(sw*1.05)));
-    const scale=outW/sw;
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.round(sw*scale); canvas.height=Math.max(180,Math.round(bandH*scale));
-    const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(video,sx,bandY,sw,bandH,0,0,canvas.width,canvas.height);
-    const img=ctx.getImageData(0,0,canvas.width,canvas.height); const d=img.data;
-    // Contraste fuerte adaptado a texto negro sobre papel blanco.
-    for(let i=0;i<d.length;i+=4){
-      const gray=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
-      const v=gray>158?255:0; d[i]=d[i+1]=d[i+2]=v;
-    }
-    ctx.putImageData(img,0,0);
-    return canvas;
+    try{ if(navigator.vibrate) navigator.vibrate(60); }catch(_e){}
   }
 
   async function tuneScannerCamera(track){
@@ -556,97 +500,179 @@
       const advanced=[];
       if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) advanced.push({focusMode:'continuous'});
       if(caps.zoom){
-        const z=Math.min(caps.zoom.max||1.7,Math.max(caps.zoom.min||1,1.35));
+        const z=Math.min(caps.zoom.max||1.4,Math.max(caps.zoom.min||1,1.15));
         advanced.push({zoom:z});
       }
       if(advanced.length) await track.applyConstraints({advanced});
     }catch(_e){}
   }
 
-  async function scanOneContinuousFrame(token){
-    if(!grScannerRunning||token!==grScannerLoopToken||Date.now()<grScannerCooldownUntil) return;
-    const video=$('#grScannerVideo'), status=$('#grScannerStatus');
-    if(!video||!status||grScannerBusy) return;
+  function guideFromContentDisposition(value){
+    if(!value) return '';
+    let decoded=String(value);
+    try{ decoded=decodeURIComponent(decoded); }catch(_e){}
+    return extractGuideFromAnyText(decoded);
+  }
+
+  async function guideFromPdfBuffer(buffer){
+    if(!window.pdfjsLib) throw new Error('PDFJS_NOT_LOADED');
+    try{
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }catch(_e){}
+    const doc=await window.pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
+    const page=await doc.getPage(1);
+    const content=await page.getTextContent();
+    const text=content.items.map(x=>x.str||'').join(' ');
+    return extractGuideFromAnyText(text);
+  }
+
+  async function resolveGuideFromSunatQr(qrUrl){
+    const started=performance.now();
+    let resp;
+    try{
+      // fetch resuelve apenas llegan los headers. Si SUNAT expone Content-Disposition,
+      // obtenemos la GR sin descargar/procesar todo el PDF.
+      resp=await fetch(qrUrl,{method:'GET',mode:'cors',cache:'no-store',credentials:'omit'});
+    }catch(err){
+      const e=new Error('SUNAT_CORS_OR_NETWORK'); e.cause=err; throw e;
+    }
+    if(!resp.ok) throw new Error(`SUNAT_HTTP_${resp.status}`);
+
+    const byHeader=guideFromContentDisposition(resp.headers.get('content-disposition'));
+    if(byHeader){
+      try{ resp.body?.cancel?.(); }catch(_e){}
+      return {guide:byHeader,source:'header',ms:Math.round(performance.now()-started)};
+    }
+
+    const buffer=await resp.arrayBuffer();
+    const byPdf=await guideFromPdfBuffer(buffer);
+    if(!byPdf) throw new Error('GUIDE_NOT_FOUND_IN_SUNAT_PDF');
+    return {guide:byPdf,source:'pdf',ms:Math.round(performance.now()-started)};
+  }
+
+  async function ensureQrDetector(){
+    if(grScannerQrDetector) return grScannerQrDetector;
+    if('BarcodeDetector' in window){
+      try{
+        const formats=await window.BarcodeDetector.getSupportedFormats?.();
+        if(!formats || formats.includes('qr_code')){
+          grScannerQrDetector=new window.BarcodeDetector({formats:['qr_code']});
+          return grScannerQrDetector;
+        }
+      }catch(_e){}
+    }
+    return null;
+  }
+
+  function captureQrFrame(video){
+    const vw=video.videoWidth, vh=video.videoHeight;
+    if(!vw||!vh) return null;
+    const maxW=720;
+    const scale=Math.min(1,maxW/vw);
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(vw*scale); canvas.height=Math.round(vh*scale);
+    canvas.getContext('2d',{willReadFrequently:true}).drawImage(video,0,0,canvas.width,canvas.height);
+    return canvas;
+  }
+
+  async function detectQrPayload(video){
+    const detector=await ensureQrDetector();
+    if(detector){
+      try{
+        const codes=await detector.detect(video);
+        const qr=codes.find(c=>c.rawValue && isSunatGreQr(c.rawValue));
+        if(qr) return qr.rawValue;
+      }catch(_e){}
+    }
+    if(window.jsQR){
+      const canvas=captureQrFrame(video); if(!canvas) return '';
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code=window.jsQR(img.data,canvas.width,canvas.height,{inversionAttempts:'dontInvert'});
+      if(code?.data && isSunatGreQr(code.data)) return code.data;
+    }
+    return '';
+  }
+
+  async function processQrPayload(payload, token){
+    if(grScannerBusy||!grScannerRunning||token!==grScannerLoopToken) return;
     grScannerBusy=true;
     try{
-      const worker=await ensureGrScannerWorker(status);
+      scannerFlash('scan-warn','QR detectado','Obteniendo numero de guia de SUNAT…');
+      const resolved=await resolveGuideFromSunatQr(payload);
       if(!grScannerRunning||token!==grScannerLoopToken) return;
-      const frame=captureScannerCrop(video);
-      const ret=await worker.recognize(frame);
-      if(!grScannerRunning||token!==grScannerLoopToken) return;
-      const candidates=extractOcrGuideCandidates(ret?.data?.text||'');
+      const candidate=resolved.guide;
       const guideMap=scannerGuideMap();
-      const existing=[...new Set(candidates.filter(c=>guideMap.has(c)))];
-
-      if(existing.length!==1){
-        grScannerLastCandidate=''; grScannerCandidateStreak=0;
-        if(existing.length>1) scannerFlash('scan-warn','Lectura dudosa','Se detecto mas de una GR. No se agrego nada.');
-        else scannerFlash('','Escaneando…','Coloca el numero de GR dentro del cuadro.');
+      const r=guideMap.get(candidate);
+      if(!r){
+        scannerFlash('scan-error','GR no encontrada en Roche',candidate+' · No se agrego');
+        grScannerCooldownUntil=Date.now()+800;
         return;
       }
-
-      const candidate=existing[0];
-      if(candidate===grScannerLastCandidate) grScannerCandidateStreak++;
-      else { grScannerLastCandidate=candidate; grScannerCandidateStreak=1; }
-
       if(grScannerAcceptedSet.has(candidate)){
         scannerFlash('scan-warn','Guia ya capturada',candidate);
-        grScannerLastCandidate=''; grScannerCandidateStreak=0;
-        grScannerCooldownUntil=Date.now()+900;
+        grScannerCooldownUntil=Date.now()+650;
         return;
       }
-
-      if(grScannerCandidateStreak<2){
-        scannerFlash('scan-warn','Confirmando lectura…',candidate);
-        return;
-      }
-
-      const r=guideMap.get(candidate);
       const isReview=state.review.some(x=>String(x.id)===String(r.id));
       if(isReview){
         scannerFlash('scan-error','GR en Por revisar',candidate+' · No se agrego a la ruma');
-        grScannerLastCandidate=''; grScannerCandidateStreak=0;
-        grScannerCooldownUntil=Date.now()+1200;
+        grScannerCooldownUntil=Date.now()+900;
         return;
       }
-
       grScannerAccepted.push(r); grScannerAcceptedSet.add(candidate); updateScannerRuma();
-      scannerFlash('scan-ok','✓ GR agregada',`${candidate} · ${r.recipient||''}`);
+      scannerFlash('scan-ok','✓ GR agregada',`${candidate} · ${resolved.ms} ms · ${r.recipient||''}`);
       scannerBeep();
-      grScannerLastCandidate=''; grScannerCandidateStreak=0;
-      grScannerCooldownUntil=Date.now()+1150;
+      grScannerCooldownUntil=Date.now()+520;
     }catch(err){
-      console.error('continuous OCR scanner',err);
-      scannerFlash('scan-error','No pude leer esta guia','No se agrego nada. Sigue intentando.');
-      grScannerLastCandidate=''; grScannerCandidateStreak=0;
-      grScannerCooldownUntil=Date.now()+700;
+      console.error('QR SUNAT resolver',err);
+      if(err?.message==='SUNAT_CORS_OR_NETWORK'){
+        scannerFlash('scan-error','SUNAT bloqueo la consulta desde esta web','El QR si fue leido. Falta habilitar el proxy SUNAT para obtener la GR.');
+      }else{
+        scannerFlash('scan-error','No pude obtener la GR del QR','No se agrego nada. Vuelve a apuntar al QR.');
+      }
+      grScannerCooldownUntil=Date.now()+850;
     }finally{
       grScannerBusy=false;
     }
   }
 
   async function scannerContinuousLoop(token){
-    while(grScannerRunning&&token===grScannerLoopToken&&$('#grScannerVideo')){
-      if(Date.now()>=grScannerCooldownUntil) await scanOneContinuousFrame(token);
-      await sleep(160);
+    const video=$('#grScannerVideo');
+    while(grScannerRunning&&token===grScannerLoopToken&&video){
+      if(!grScannerBusy && Date.now()>=grScannerCooldownUntil){
+        const payload=await detectQrPayload(video);
+        const now=Date.now();
+        if(payload){
+          grScannerLastQrSeenAt=now;
+          if(payload!==grScannerLastQr){
+            grScannerLastQr=payload;
+            processQrPayload(payload,token);
+          }
+        }else if(now-grScannerLastQrSeenAt>380){
+          grScannerLastQr='';
+          const target=$('#grScannerTarget');
+          if(target && !target.classList.contains('scan-ok')) scannerFlash('','Escaneando QR…','Apunta al QR. No necesitas alinear el numero de guia.');
+        }
+      }
+      await sleep(85);
     }
   }
 
   async function openGrScanner(){
     if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite abrir la camara desde la web',true); return; }
-    grScannerAccepted=[]; grScannerAcceptedSet=new Set(); grScannerLastCandidate=''; grScannerCandidateStreak=0; grScannerCooldownUntil=0;
-    openModal('Escaneo rapido de GR','Apunta al numero impreso. Verde = confirmada y agregada. Si la lectura es dudosa, NO se agrega.',`
-      <div class="gr-scanner-shell continuous-scanner">
-        <div class="scanner-counter-bar"><div><span>RUMA ACTUAL</span><strong><b id="grScannerCount">0</b> guias</strong></div><small>Prefijos: ${GR_PREFIXES.join(' · ')}</small></div>
-        <div class="gr-scanner-camera square-scanner-camera">
+    grScannerAccepted=[]; grScannerAcceptedSet=new Set(); grScannerCooldownUntil=0; grScannerLastQr=''; grScannerLastQrSeenAt=0;
+    openModal('Escaneo rapido por QR','Apunta solo al QR de la GRE. Verde = guia identificada y agregada. No usa OCR.',`
+      <div class="gr-scanner-shell continuous-scanner qr-only-scanner">
+        <div class="scanner-counter-bar"><div><span>RUMA ACTUAL</span><strong><b id="grScannerCount">0</b> guias</strong></div><small>QR SUNAT · sin OCR</small></div>
+        <div class="gr-scanner-camera square-scanner-camera qr-camera">
           <video id="grScannerVideo" autoplay playsinline muted></video>
-          <div class="gr-scanner-target square-target" id="grScannerTarget">
-            <div class="scanner-inner-band"></div>
-            <span>COLOCA AQUI EL NUMERO DE GR</span>
+          <div class="gr-scanner-target square-target qr-target" id="grScannerTarget">
+            <span>APUNTA AL QR</span>
           </div>
         </div>
-        <div id="grScannerStatus" class="scanner-status"><strong>Abriendo camara…</strong><span>La lectura empezara automaticamente.</span></div>
-        <div class="scanner-ruma-panel"><div class="scanner-ruma-head"><strong>Guias confirmadas</strong><span>Solo entran lecturas seguras</span></div><div id="grScannerAcceptedList">${scannerAcceptedHtml()}</div></div>
+        <div id="grScannerStatus" class="scanner-status"><strong>Abriendo camara…</strong><span>La lectura QR empezara automaticamente.</span></div>
+        <div class="scanner-ruma-panel"><div class="scanner-ruma-head"><strong>Guias confirmadas</strong><span>Solo QR validado por SUNAT + Roche</span></div><div id="grScannerAcceptedList">${scannerAcceptedHtml()}</div></div>
         <div class="scanner-actions continuous-actions"><button type="button" class="btn" id="grScannerUndoBtn" disabled>DESHACER ULTIMA</button><button type="button" class="btn primary big" id="grScannerFinishBtn">FINALIZAR RUMA</button></div>
       </div>`,'scanner-modal continuous-scanner-modal');
     try{
@@ -657,24 +683,22 @@
       video.srcObject=grScannerStream; await video.play();
       const track=grScannerStream.getVideoTracks()[0]; if(track) await tuneScannerCamera(track);
       grScannerRunning=true; const token=++grScannerLoopToken;
-      scannerFlash('','Escaneando…','Apunta al numero. Cuando se ponga verde, pasa a la siguiente guia.');
+      scannerFlash('','Escaneando QR…','Apunta al QR. Cuando se ponga verde, pasa a la siguiente guia.');
       const undo=$('#grScannerUndoBtn');
       if(undo){
         const refreshUndo=()=>{ undo.disabled=!grScannerAccepted.length; };
         refreshUndo();
-        const oldUpdate=updateScannerRuma;
-        // Actualiza tambien el estado del boton sin alterar la lista.
         undo.onclick=()=>{
           const r=grScannerAccepted.pop();
           if(r) grScannerAcceptedSet.delete(String(r.gr||'').toUpperCase().replace(/\s+/g,''));
-          updateScannerRuma(); refreshUndo(); scannerFlash('','Ultima guia retirada','Continua escaneando.');
+          updateScannerRuma(); refreshUndo(); scannerFlash('','Ultima guia retirada','Continua escaneando QR.');
         };
         const obs=new MutationObserver(refreshUndo); const c=$('#grScannerCount'); if(c) obs.observe(c,{childList:true,characterData:true,subtree:true});
       }
       $('#grScannerFinishBtn').onclick=()=>{
         grScannerRunning=false; grScannerLoopToken++;
         if(grScannerStream){ try{grScannerStream.getTracks().forEach(t=>t.stop());}catch(_e){} grScannerStream=null; }
-        const status=$('#grScannerStatus'); if(status) status.innerHTML=`<strong>Ruma finalizada · ${grScannerAccepted.length} guias</strong><span>No se modifico ningun registro. Esta lista queda lista para el futuro registro masivo.</span>`;
+        const status=$('#grScannerStatus'); if(status) status.innerHTML=`<strong>Ruma finalizada · ${grScannerAccepted.length} guias</strong><span>No se modifico ningun registro.</span>`;
         const target=$('#grScannerTarget'); if(target) target.classList.remove('scan-ok','scan-warn','scan-error');
         $('#grScannerFinishBtn').disabled=true; if(undo) undo.disabled=true;
       };
