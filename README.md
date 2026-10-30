@@ -1,4 +1,4 @@
-ROCHE V2.2.12 WEB
+ROCHE V2.2.11 WEB
 
 Actualización sobre V2.2.9.
 
@@ -13,8 +13,3 @@ Cambios principales:
 No requiere cambios SQL ni cambios en la estructura de Supabase: la información adicional se guarda dentro del estado compartido JSON existente.
 
 Regularización histórica: iniciar desde Pendientes / Parciales. Los resultados se visualizan en Liquidados y en Historial Roche.
-
-
-V2.2.12: prueba OCR de GR desde cámara en Registro rápido. No requiere SQL nuevo.
-
-V2.2.13: escaneo rápido continuo de rumas con confirmación verde, beep/vibración y validación contra la base. No requiere SQL nuevo.

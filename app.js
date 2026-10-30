@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.12-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.11-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -68,7 +68,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.12-web';
+    copy.version='2.2.11-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.12-web';
+      state.version='2.2.11-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.12-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.11-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.12-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.11-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.12-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.11-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -349,7 +349,7 @@
     $('#modalTitle').textContent=title; $('#modalSubtitle').textContent=subtitle||''; $('#modalBody').innerHTML=html;
     $('#modal').className='modal '+cls; $('#modalBackdrop').classList.remove('hidden');
   }
-  function closeModal(){ stopGrScanner(); closeExcelFilterPopover?.(); $('#modalBackdrop').classList.add('hidden'); $('#modalBody').innerHTML=''; }
+  function closeModal(){ closeExcelFilterPopover?.(); $('#modalBackdrop').classList.add('hidden'); $('#modalBody').innerHTML=''; }
   $('#modalClose').addEventListener('click',closeModal);
   $('#modalBackdrop').addEventListener('click',e=>{ if(e.target.id==='modalBackdrop') closeModal(); });
 
@@ -395,323 +395,8 @@
   floatingObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style']});
 
 
-  // ---------- V2.2.14 · Escaneo rapido SOLO QR ----------
-  let grScannerStream=null;
-  let grScannerBusy=false;
-  let grScannerRunning=false;
-  let grScannerLoopToken=0;
-  let grScannerAccepted=[];
-  let grScannerAcceptedSet=new Set();
-  let grScannerCooldownUntil=0;
-  let grScannerQrDetector=null;
-  let grScannerLastQr='';
-  let grScannerLastQrSeenAt=0;
-
-  const GR_PREFIXES=['T002','T006','T008','EG07'];
-  const SUNAT_QR_HOST='e-factura.sunat.gob.pe';
-  const SUNAT_QR_PATH='/v1/contribuyente/gre/comprobantes/descargaqr';
-
-  function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-
-  function stopGrScanner(){
-    grScannerRunning=false;
-    grScannerLoopToken++;
-    if(grScannerStream){
-      try{ grScannerStream.getTracks().forEach(t=>t.stop()); }catch(_e){}
-      grScannerStream=null;
-    }
-    grScannerBusy=false;
-  }
-
-  function scannerGuideMap(){
-    const map=new Map();
-    [...state.records,...state.review].forEach(r=>{
-      const key=String(r.gr||'').toUpperCase().replace(/\s+/g,'');
-      if(key) map.set(key,r);
-    });
-    return map;
-  }
-
-  function normalizeGuideFromParts(prefix, serial){
-    prefix=String(prefix||'').toUpperCase();
-    if(!GR_PREFIXES.includes(prefix)) return '';
-    const digits=String(serial||'').replace(/\D/g,'');
-    if(!digits||digits.length>8) return '';
-    return `${prefix}-${digits.padStart(8,'0')}`;
-  }
-
-  function extractGuideFromAnyText(text){
-    const t=String(text||'').toUpperCase().replace(/[–—_]/g,'-');
-    // PDF visible: "N° T002 - 00001625" / filename: "...-T006-107452-PDF.pdf"
-    const re=/(T002|T006|T008|EG07)\s*-?\s*([0-9]{1,8})/g;
-    let m;
-    while((m=re.exec(t))!==null){
-      const g=normalizeGuideFromParts(m[1],m[2]);
-      if(g) return g;
-    }
-    return '';
-  }
-
-  function isSunatGreQr(payload){
-    try{
-      const u=new URL(String(payload||'').trim());
-      return u.protocol==='https:' && u.hostname===SUNAT_QR_HOST && u.pathname===SUNAT_QR_PATH && !!u.searchParams.get('hashqr');
-    }catch(_e){ return false; }
-  }
-
-  function scannerAcceptedHtml(){
-    if(!grScannerAccepted.length) return '<div class="scanner-empty">Aun no hay guias confirmadas.</div>';
-    return `<div class="scanner-ruma-list">${grScannerAccepted.slice().reverse().map(r=>`<div class="scanner-ruma-row"><span class="scanner-ruma-check">✓</span><div><strong>${esc(r.gr)}</strong><small>${esc(r.grt||'—')} · ${esc(r.recipient||'—')}</small></div></div>`).join('')}</div>`;
-  }
-
-  function updateScannerRuma(){
-    const count=$('#grScannerCount'); if(count) count.textContent=String(grScannerAccepted.length);
-    const list=$('#grScannerAcceptedList'); if(list) list.innerHTML=scannerAcceptedHtml();
-  }
-
-  function scannerFlash(kind, title, subtitle=''){
-    const target=$('#grScannerTarget'), status=$('#grScannerStatus');
-    if(target){
-      target.classList.remove('scan-ok','scan-warn','scan-error');
-      if(kind) target.classList.add(kind);
-    }
-    if(status){
-      status.className=`scanner-status ${kind||''}`.trim();
-      status.innerHTML=`<strong>${esc(title)}</strong>${subtitle?`<span>${esc(subtitle)}</span>`:''}`;
-    }
-  }
-
-  function scannerBeep(){
-    try{
-      const AC=window.AudioContext||window.webkitAudioContext;
-      if(AC){
-        const ctx=new AC(); const osc=ctx.createOscillator(); const gain=ctx.createGain();
-        osc.type='sine'; osc.frequency.value=980; gain.gain.value=.09;
-        osc.connect(gain); gain.connect(ctx.destination); osc.start();
-        setTimeout(()=>{ try{osc.stop();ctx.close();}catch(_e){} },95);
-      }
-    }catch(_e){}
-    try{ if(navigator.vibrate) navigator.vibrate(60); }catch(_e){}
-  }
-
-  async function tuneScannerCamera(track){
-    try{
-      const caps=track.getCapabilities?.()||{};
-      const advanced=[];
-      if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) advanced.push({focusMode:'continuous'});
-      if(caps.zoom){
-        const z=Math.min(caps.zoom.max||1.4,Math.max(caps.zoom.min||1,1.15));
-        advanced.push({zoom:z});
-      }
-      if(advanced.length) await track.applyConstraints({advanced});
-    }catch(_e){}
-  }
-
-  function guideFromContentDisposition(value){
-    if(!value) return '';
-    let decoded=String(value);
-    try{ decoded=decodeURIComponent(decoded); }catch(_e){}
-    return extractGuideFromAnyText(decoded);
-  }
-
-  async function guideFromPdfBuffer(buffer){
-    if(!window.pdfjsLib) throw new Error('PDFJS_NOT_LOADED');
-    try{
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    }catch(_e){}
-    const doc=await window.pdfjsLib.getDocument({data:new Uint8Array(buffer)}).promise;
-    const page=await doc.getPage(1);
-    const content=await page.getTextContent();
-    const text=content.items.map(x=>x.str||'').join(' ');
-    return extractGuideFromAnyText(text);
-  }
-
-  async function resolveGuideFromSunatQr(qrUrl){
-    const started=performance.now();
-    let resp;
-    try{
-      // fetch resuelve apenas llegan los headers. Si SUNAT expone Content-Disposition,
-      // obtenemos la GR sin descargar/procesar todo el PDF.
-      resp=await fetch(qrUrl,{method:'GET',mode:'cors',cache:'no-store',credentials:'omit'});
-    }catch(err){
-      const e=new Error('SUNAT_CORS_OR_NETWORK'); e.cause=err; throw e;
-    }
-    if(!resp.ok) throw new Error(`SUNAT_HTTP_${resp.status}`);
-
-    const byHeader=guideFromContentDisposition(resp.headers.get('content-disposition'));
-    if(byHeader){
-      try{ resp.body?.cancel?.(); }catch(_e){}
-      return {guide:byHeader,source:'header',ms:Math.round(performance.now()-started)};
-    }
-
-    const buffer=await resp.arrayBuffer();
-    const byPdf=await guideFromPdfBuffer(buffer);
-    if(!byPdf) throw new Error('GUIDE_NOT_FOUND_IN_SUNAT_PDF');
-    return {guide:byPdf,source:'pdf',ms:Math.round(performance.now()-started)};
-  }
-
-  async function ensureQrDetector(){
-    if(grScannerQrDetector) return grScannerQrDetector;
-    if('BarcodeDetector' in window){
-      try{
-        const formats=await window.BarcodeDetector.getSupportedFormats?.();
-        if(!formats || formats.includes('qr_code')){
-          grScannerQrDetector=new window.BarcodeDetector({formats:['qr_code']});
-          return grScannerQrDetector;
-        }
-      }catch(_e){}
-    }
-    return null;
-  }
-
-  function captureQrFrame(video){
-    const vw=video.videoWidth, vh=video.videoHeight;
-    if(!vw||!vh) return null;
-    const maxW=720;
-    const scale=Math.min(1,maxW/vw);
-    const canvas=document.createElement('canvas');
-    canvas.width=Math.round(vw*scale); canvas.height=Math.round(vh*scale);
-    canvas.getContext('2d',{willReadFrequently:true}).drawImage(video,0,0,canvas.width,canvas.height);
-    return canvas;
-  }
-
-  async function detectQrPayload(video){
-    const detector=await ensureQrDetector();
-    if(detector){
-      try{
-        const codes=await detector.detect(video);
-        const qr=codes.find(c=>c.rawValue && isSunatGreQr(c.rawValue));
-        if(qr) return qr.rawValue;
-      }catch(_e){}
-    }
-    if(window.jsQR){
-      const canvas=captureQrFrame(video); if(!canvas) return '';
-      const ctx=canvas.getContext('2d',{willReadFrequently:true});
-      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-      const code=window.jsQR(img.data,canvas.width,canvas.height,{inversionAttempts:'dontInvert'});
-      if(code?.data && isSunatGreQr(code.data)) return code.data;
-    }
-    return '';
-  }
-
-  async function processQrPayload(payload, token){
-    if(grScannerBusy||!grScannerRunning||token!==grScannerLoopToken) return;
-    grScannerBusy=true;
-    try{
-      scannerFlash('scan-warn','QR detectado','Obteniendo numero de guia de SUNAT…');
-      const resolved=await resolveGuideFromSunatQr(payload);
-      if(!grScannerRunning||token!==grScannerLoopToken) return;
-      const candidate=resolved.guide;
-      const guideMap=scannerGuideMap();
-      const r=guideMap.get(candidate);
-      if(!r){
-        scannerFlash('scan-error','GR no encontrada en Roche',candidate+' · No se agrego');
-        grScannerCooldownUntil=Date.now()+800;
-        return;
-      }
-      if(grScannerAcceptedSet.has(candidate)){
-        scannerFlash('scan-warn','Guia ya capturada',candidate);
-        grScannerCooldownUntil=Date.now()+650;
-        return;
-      }
-      const isReview=state.review.some(x=>String(x.id)===String(r.id));
-      if(isReview){
-        scannerFlash('scan-error','GR en Por revisar',candidate+' · No se agrego a la ruma');
-        grScannerCooldownUntil=Date.now()+900;
-        return;
-      }
-      grScannerAccepted.push(r); grScannerAcceptedSet.add(candidate); updateScannerRuma();
-      scannerFlash('scan-ok','✓ GR agregada',`${candidate} · ${resolved.ms} ms · ${r.recipient||''}`);
-      scannerBeep();
-      grScannerCooldownUntil=Date.now()+520;
-    }catch(err){
-      console.error('QR SUNAT resolver',err);
-      if(err?.message==='SUNAT_CORS_OR_NETWORK'){
-        scannerFlash('scan-error','SUNAT bloqueo la consulta desde esta web','El QR si fue leido. Falta habilitar el proxy SUNAT para obtener la GR.');
-      }else{
-        scannerFlash('scan-error','No pude obtener la GR del QR','No se agrego nada. Vuelve a apuntar al QR.');
-      }
-      grScannerCooldownUntil=Date.now()+850;
-    }finally{
-      grScannerBusy=false;
-    }
-  }
-
-  async function scannerContinuousLoop(token){
-    const video=$('#grScannerVideo');
-    while(grScannerRunning&&token===grScannerLoopToken&&video){
-      if(!grScannerBusy && Date.now()>=grScannerCooldownUntil){
-        const payload=await detectQrPayload(video);
-        const now=Date.now();
-        if(payload){
-          grScannerLastQrSeenAt=now;
-          if(payload!==grScannerLastQr){
-            grScannerLastQr=payload;
-            processQrPayload(payload,token);
-          }
-        }else if(now-grScannerLastQrSeenAt>380){
-          grScannerLastQr='';
-          const target=$('#grScannerTarget');
-          if(target && !target.classList.contains('scan-ok')) scannerFlash('','Escaneando QR…','Apunta al QR. No necesitas alinear el numero de guia.');
-        }
-      }
-      await sleep(85);
-    }
-  }
-
-  async function openGrScanner(){
-    if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite abrir la camara desde la web',true); return; }
-    grScannerAccepted=[]; grScannerAcceptedSet=new Set(); grScannerCooldownUntil=0; grScannerLastQr=''; grScannerLastQrSeenAt=0;
-    openModal('Escaneo rapido por QR','Apunta solo al QR de la GRE. Verde = guia identificada y agregada. No usa OCR.',`
-      <div class="gr-scanner-shell continuous-scanner qr-only-scanner">
-        <div class="scanner-counter-bar"><div><span>RUMA ACTUAL</span><strong><b id="grScannerCount">0</b> guias</strong></div><small>QR SUNAT · sin OCR</small></div>
-        <div class="gr-scanner-camera square-scanner-camera qr-camera">
-          <video id="grScannerVideo" autoplay playsinline muted></video>
-          <div class="gr-scanner-target square-target qr-target" id="grScannerTarget">
-            <span>APUNTA AL QR</span>
-          </div>
-        </div>
-        <div id="grScannerStatus" class="scanner-status"><strong>Abriendo camara…</strong><span>La lectura QR empezara automaticamente.</span></div>
-        <div class="scanner-ruma-panel"><div class="scanner-ruma-head"><strong>Guias confirmadas</strong><span>Solo QR validado por SUNAT + Roche</span></div><div id="grScannerAcceptedList">${scannerAcceptedHtml()}</div></div>
-        <div class="scanner-actions continuous-actions"><button type="button" class="btn" id="grScannerUndoBtn" disabled>DESHACER ULTIMA</button><button type="button" class="btn primary big" id="grScannerFinishBtn">FINALIZAR RUMA</button></div>
-      </div>`,'scanner-modal continuous-scanner-modal');
-    try{
-      grScannerStream=await navigator.mediaDevices.getUserMedia({
-        video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false
-      });
-      const video=$('#grScannerVideo'); if(!video){ stopGrScanner(); return; }
-      video.srcObject=grScannerStream; await video.play();
-      const track=grScannerStream.getVideoTracks()[0]; if(track) await tuneScannerCamera(track);
-      grScannerRunning=true; const token=++grScannerLoopToken;
-      scannerFlash('','Escaneando QR…','Apunta al QR. Cuando se ponga verde, pasa a la siguiente guia.');
-      const undo=$('#grScannerUndoBtn');
-      if(undo){
-        const refreshUndo=()=>{ undo.disabled=!grScannerAccepted.length; };
-        refreshUndo();
-        undo.onclick=()=>{
-          const r=grScannerAccepted.pop();
-          if(r) grScannerAcceptedSet.delete(String(r.gr||'').toUpperCase().replace(/\s+/g,''));
-          updateScannerRuma(); refreshUndo(); scannerFlash('','Ultima guia retirada','Continua escaneando QR.');
-        };
-        const obs=new MutationObserver(refreshUndo); const c=$('#grScannerCount'); if(c) obs.observe(c,{childList:true,characterData:true,subtree:true});
-      }
-      $('#grScannerFinishBtn').onclick=()=>{
-        grScannerRunning=false; grScannerLoopToken++;
-        if(grScannerStream){ try{grScannerStream.getTracks().forEach(t=>t.stop());}catch(_e){} grScannerStream=null; }
-        const status=$('#grScannerStatus'); if(status) status.innerHTML=`<strong>Ruma finalizada · ${grScannerAccepted.length} guias</strong><span>No se modifico ningun registro.</span>`;
-        const target=$('#grScannerTarget'); if(target) target.classList.remove('scan-ok','scan-warn','scan-error');
-        $('#grScannerFinishBtn').disabled=true; if(undo) undo.disabled=true;
-      };
-      scannerContinuousLoop(token);
-    }catch(err){
-      console.error('camera',err);
-      scannerFlash('scan-error','No pude abrir la camara','Permite el acceso a la camara en Chrome y vuelve a intentarlo.');
-    }
-  }
-
   // ---------- Quick search ----------
   $('#quickSearchBtn').addEventListener('click',doQuickSearch);
-  $('#scanGrCameraBtn')?.addEventListener('click',openGrScanner);
   $('#quickSearch').addEventListener('keydown',e=>{ if(e.key==='Enter') doQuickSearch(); });
   function doQuickSearch(){
     const q=$('#quickSearch').value.trim(); const out=$('#quickResult');
