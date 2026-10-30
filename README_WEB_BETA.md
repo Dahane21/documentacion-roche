@@ -1,4 +1,4 @@
-# Roche V2.2.11 Web
+# Roche V2.2.12 Web
 
 Esta beta conserva la lógica de V1.4.3 pero cambia el almacenamiento principal a Supabase.
 
@@ -16,3 +16,7 @@ Esta beta conserva la lógica de V1.4.3 pero cambia el almacenamiento principal 
 
 ## Importante
 Esta es una beta de transición orientada a validar la experiencia multiusuario rápidamente. La estructura relacional creada previamente en Supabase se conserva para una posterior normalización de datos si se requiere.
+
+
+## V2.2.12 · Prueba OCR
+Registro rápido incorpora Escanear GR con cámara. La lectura se valida contra la base y no modifica datos automáticamente.

@@ -49,7 +49,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.11-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.12-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -68,7 +68,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.11-web';
+    copy.version='2.2.12-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -103,7 +103,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.11-web';
+      state.version='2.2.12-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -118,7 +118,7 @@
       if(error||!data?.data||!data.updated_at)return;
       if(lastRemoteUpdatedAt && data.updated_at<=lastRemoteUpdatedAt)return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.11-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.12-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
   }
   function displayUser(user){
@@ -318,7 +318,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.11-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.12-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -330,7 +330,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.11-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.12-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -349,7 +349,7 @@
     $('#modalTitle').textContent=title; $('#modalSubtitle').textContent=subtitle||''; $('#modalBody').innerHTML=html;
     $('#modal').className='modal '+cls; $('#modalBackdrop').classList.remove('hidden');
   }
-  function closeModal(){ closeExcelFilterPopover?.(); $('#modalBackdrop').classList.add('hidden'); $('#modalBody').innerHTML=''; }
+  function closeModal(){ stopGrScanner(); closeExcelFilterPopover?.(); $('#modalBackdrop').classList.add('hidden'); $('#modalBody').innerHTML=''; }
   $('#modalClose').addEventListener('click',closeModal);
   $('#modalBackdrop').addEventListener('click',e=>{ if(e.target.id==='modalBackdrop') closeModal(); });
 
@@ -395,8 +395,197 @@
   floatingObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style']});
 
 
+  // ---------- OCR camera pilot ----------
+  let grScannerStream=null;
+  let grScannerWorker=null;
+  let grScannerBusy=false;
+
+  function stopGrScanner(){
+    if(grScannerStream){
+      try{ grScannerStream.getTracks().forEach(t=>t.stop()); }catch(_e){}
+      grScannerStream=null;
+    }
+    grScannerBusy=false;
+  }
+
+  function scannerGuideMap(){
+    const map=new Map();
+    [...state.records,...state.review].forEach(r=>{
+      const key=String(r.gr||'').toUpperCase().replace(/\s+/g,'');
+      if(key) map.set(key,r);
+    });
+    return map;
+  }
+
+  function normalizeOcrGuideToken(token){
+    let t=String(token||'').toUpperCase().replace(/[–—_]/g,'-').replace(/\s+/g,'');
+    const m=t.match(/T([0-9OILSB]{3})-?([0-9OILSB]{8})/);
+    if(!m) return '';
+    const digitFix=x=>x.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
+    return `T${digitFix(m[1])}-${digitFix(m[2])}`;
+  }
+
+  function extractOcrGuideCandidates(text){
+    const raw=String(text||'').toUpperCase().replace(/[–—_]/g,'-');
+    const compact=raw.replace(/\s+/g,'');
+    const tokens=[];
+    const re=/T[0-9OILSB]{3}-?[0-9OILSB]{8}/g;
+    for(const source of [raw,compact]){
+      let m;
+      while((m=re.exec(source))!==null){
+        const g=normalizeOcrGuideToken(m[0]);
+        if(g&&!tokens.includes(g)) tokens.push(g);
+      }
+      re.lastIndex=0;
+    }
+    return tokens;
+  }
+
+  function scannerRecordCard(r, votes, total){
+    const isReview=state.review.some(x=>String(x.id)===String(r.id));
+    return `<div class="scanner-success">
+      <div class="scanner-success-icon">✓</div>
+      <div class="scanner-success-copy">
+        <div class="eyebrow">GR CONFIRMADA · ${votes}/${total} LECTURAS</div>
+        <h3>${esc(r.gr)}</h3>
+        <div class="scanner-meta-grid">
+          <div><span>GRT</span><strong>${esc(r.grt||'—')}</strong></div>
+          <div><span>Pedido</span><strong>${esc(r.order||'—')}</strong></div>
+          <div><span>Distrito</span><strong>${esc(r.district||'—')}</strong></div>
+          <div class="scanner-meta-wide"><span>Destinatario</span><strong>${esc(r.recipient||'—')}</strong></div>
+        </div>
+        ${isReview?'<div class="alert-box">Esta GR existe, pero está en <strong>Importar data → Por revisar</strong>. No se abrirá el registro hasta confirmarla.</div>':''}
+        <div class="scanner-result-actions">
+          ${isReview?'':`<button class="btn primary" id="scannerOpenRecord">ABRIR REGISTRO</button>`}
+          <button class="btn" id="scannerReadAnother">ESCANEAR OTRA</button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function ensureGrScannerWorker(statusEl){
+    if(grScannerWorker) return grScannerWorker;
+    if(!window.Tesseract) throw new Error('No se pudo cargar el lector OCR. Revisa la conexión a internet.');
+    if(statusEl) statusEl.textContent='Preparando lector OCR por primera vez…';
+    grScannerWorker=await window.Tesseract.createWorker('eng',1,{logger:m=>{
+      if(!statusEl||!m) return;
+      if(m.status==='recognizing text' && typeof m.progress==='number') statusEl.textContent=`Leyendo número… ${Math.round(m.progress*100)}%`;
+    }});
+    await grScannerWorker.setParameters({
+      tessedit_char_whitelist:'T0123456789-OILSB',
+      tessedit_pageseg_mode:'7',
+      preserve_interword_spaces:'1'
+    });
+    return grScannerWorker;
+  }
+
+  function captureScannerCrop(video){
+    const vw=video.videoWidth, vh=video.videoHeight;
+    if(!vw||!vh) throw new Error('La cámara todavía no está lista.');
+    // La caja visible ocupa aproximadamente el centro horizontal del video.
+    const target=$('#grScannerTarget');
+    const vr=video.getBoundingClientRect(); const tr=target?.getBoundingClientRect();
+    let sx=vw*0.06, sy=vh*0.36, sw=vw*0.88, sh=vh*0.28;
+    if(target&&vr.width&&vr.height&&tr){
+      // Convierte el rectángulo rojo visible a coordenadas reales del video, incluso con object-fit: cover.
+      const fitScale=Math.max(vr.width/vw,vr.height/vh);
+      const renderedW=vw*fitScale, renderedH=vh*fitScale;
+      const offX=(vr.width-renderedW)/2, offY=(vr.height-renderedH)/2;
+      sx=Math.max(0,(tr.left-vr.left-offX)/fitScale); sy=Math.max(0,(tr.top-vr.top-offY)/fitScale);
+      sw=Math.min(vw-sx,tr.width/fitScale); sh=Math.min(vh-sy,tr.height/fitScale);
+    }
+    sx=Math.round(sx); sy=Math.round(sy); sw=Math.max(1,Math.round(sw)); sh=Math.max(1,Math.round(sh));
+    const scale=Math.max(1,Math.min(2.4,1600/sw));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.round(sw*scale); canvas.height=Math.round(sh*scale);
+    const ctx=canvas.getContext('2d',{willReadFrequently:true});
+    ctx.drawImage(video,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+    // Alto contraste para texto negro sobre papel blanco.
+    const img=ctx.getImageData(0,0,canvas.width,canvas.height); const d=img.data;
+    for(let i=0;i<d.length;i+=4){
+      const gray=Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
+      const v=gray>168?255:0; d[i]=d[i+1]=d[i+2]=v;
+    }
+    ctx.putImageData(img,0,0);
+    return canvas;
+  }
+
+  async function runGrScannerRead(){
+    if(grScannerBusy) return;
+    const video=$('#grScannerVideo'), status=$('#grScannerStatus'), result=$('#grScannerResult'), readBtn=$('#grScannerReadBtn');
+    if(!video||!status||!result||!readBtn) return;
+    grScannerBusy=true; readBtn.disabled=true; result.innerHTML='';
+    try{
+      const worker=await ensureGrScannerWorker(status);
+      status.textContent='Mantén la guía quieta dentro del recuadro…';
+      const frames=[];
+      for(let i=0;i<3;i++){
+        frames.push(captureScannerCrop(video));
+        await new Promise(r=>setTimeout(r,220));
+      }
+      const guideMap=scannerGuideMap();
+      const votes=new Map(); const readings=[];
+      for(let i=0;i<frames.length;i++){
+        status.textContent=`Analizando lectura ${i+1} de ${frames.length}…`;
+        const ret=await worker.recognize(frames[i]);
+        const text=ret?.data?.text||'';
+        const candidates=extractOcrGuideCandidates(text);
+        const existing=candidates.filter(c=>guideMap.has(c));
+        readings.push({text,candidates,existing,confidence:Number(ret?.data?.confidence||0)});
+        existing.forEach(c=>votes.set(c,(votes.get(c)||0)+1));
+      }
+      const ranked=[...votes.entries()].sort((a,b)=>b[1]-a[1]);
+      const best=ranked[0]; const second=ranked[1];
+      if(best && best[1]>=2 && (!second || best[1]>second[1])){
+        const r=guideMap.get(best[0]);
+        status.textContent='GR confirmada contra la base Roche.';
+        result.innerHTML=scannerRecordCard(r,best[1],frames.length);
+        const open=$('#scannerOpenRecord'); if(open) open.onclick=()=>{ stopGrScanner(); closeModal(); $('#quickSearch').value=r.gr; $('#quickResult').classList.remove('hidden'); openQuickRecord(r); };
+        $('#scannerReadAnother').onclick=()=>{ result.innerHTML=''; status.textContent='Alinea el número de GR y vuelve a leer.'; readBtn.disabled=false; grScannerBusy=false; };
+        if(navigator.vibrate) navigator.vibrate(80);
+        return;
+      }
+      const seen=[...new Set(readings.flatMap(x=>x.existing))];
+      status.textContent='No pude confirmar la GR con seguridad.';
+      result.innerHTML=`<div class="scanner-warning"><strong>No se agregó ni abrió ninguna guía.</strong><p>${seen.length?`Detecté posibles coincidencias: ${seen.map(esc).join(', ')}, pero no coincidieron en al menos 2 de 3 lecturas.`:'No obtuve una coincidencia exacta contra la base Roche.'}</p><small>Acerca la cámara, evita reflejos y coloca únicamente “T006-…” dentro del recuadro.</small></div>`;
+    }catch(err){
+      console.error('OCR scanner',err); status.textContent='No se pudo completar la lectura.'; result.innerHTML=`<div class="danger-box">${esc(err?.message||'Error de cámara/OCR')}</div>`;
+    }finally{
+      if(!$('#scannerReadAnother')){ readBtn.disabled=false; grScannerBusy=false; }
+    }
+  }
+
+  async function openGrScanner(){
+    if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite abrir la cámara desde la web',true); return; }
+    openModal('Escanear GR','Prueba OCR: no modifica datos. Alinea únicamente el número impreso de la guía dentro del recuadro.',`
+      <div class="gr-scanner-shell">
+        <div class="gr-scanner-camera">
+          <video id="grScannerVideo" autoplay playsinline muted></video>
+          <div class="gr-scanner-dim gr-scanner-dim-top"></div><div class="gr-scanner-dim gr-scanner-dim-bottom"></div>
+          <div class="gr-scanner-target" id="grScannerTarget"><span>ALINEA AQUÍ · T006-00107452</span></div>
+        </div>
+        <div class="scanner-help">No fotografíes toda la hoja. Acerca la cámara al número de GR ubicado en la parte superior derecha.</div>
+        <div id="grScannerStatus" class="scanner-status">Solicitando acceso a la cámara…</div>
+        <div id="grScannerResult"></div>
+        <div class="scanner-actions"><button type="button" class="btn primary big" id="grScannerReadBtn" disabled>LEER NÚMERO</button></div>
+      </div>`,'scanner-modal');
+    try{
+      grScannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+      const video=$('#grScannerVideo'); if(!video){ stopGrScanner(); return; }
+      video.srcObject=grScannerStream; await video.play();
+      $('#grScannerStatus').textContent='Cámara lista. Alinea el número y presiona LEER NÚMERO.';
+      $('#grScannerReadBtn').disabled=false;
+      $('#grScannerReadBtn').onclick=runGrScannerRead;
+    }catch(err){
+      console.error('camera',err);
+      const status=$('#grScannerStatus'); if(status) status.textContent='No pude abrir la cámara.';
+      const result=$('#grScannerResult'); if(result) result.innerHTML='<div class="danger-box">Permite el acceso a la cámara en Chrome y vuelve a intentarlo.</div>';
+    }
+  }
+
   // ---------- Quick search ----------
   $('#quickSearchBtn').addEventListener('click',doQuickSearch);
+  $('#scanGrCameraBtn')?.addEventListener('click',openGrScanner);
   $('#quickSearch').addEventListener('keydown',e=>{ if(e.key==='Enter') doQuickSearch(); });
   function doQuickSearch(){
     const q=$('#quickSearch').value.trim(); const out=$('#quickResult');
