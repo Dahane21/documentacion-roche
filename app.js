@@ -395,12 +395,25 @@
   floatingObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style']});
 
 
-  // ---------- OCR camera pilot ----------
+  // ---------- Escaneo rapido continuo de GR ----------
   let grScannerStream=null;
   let grScannerWorker=null;
   let grScannerBusy=false;
+  let grScannerRunning=false;
+  let grScannerLoopToken=0;
+  let grScannerAccepted=[];
+  let grScannerAcceptedSet=new Set();
+  let grScannerLastCandidate='';
+  let grScannerCandidateStreak=0;
+  let grScannerCooldownUntil=0;
+
+  const GR_PREFIXES=['T002','T006','T008','EG07'];
+
+  function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
 
   function stopGrScanner(){
+    grScannerRunning=false;
+    grScannerLoopToken++;
     if(grScannerStream){
       try{ grScannerStream.getTracks().forEach(t=>t.stop()); }catch(_e){}
       grScannerStream=null;
@@ -417,19 +430,28 @@
     return map;
   }
 
+  function fixOcrDigits(x){
+    return String(x||'').replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
+  }
+
   function normalizeOcrGuideToken(token){
     let t=String(token||'').toUpperCase().replace(/[–—_]/g,'-').replace(/\s+/g,'');
-    const m=t.match(/T([0-9OILSB]{3})-?([0-9OILSB]{8})/);
+    // T002/T006/T008 + 8 digitos, o EG07 + 8 digitos.
+    let m=t.match(/(T[0-9OILSB]{3}|EG[0-9OILSB]{2})-?([0-9OILSB]{8})/);
     if(!m) return '';
-    const digitFix=x=>x.replace(/O/g,'0').replace(/[IL]/g,'1').replace(/S/g,'5').replace(/B/g,'8');
-    return `T${digitFix(m[1])}-${digitFix(m[2])}`;
+    let prefix=m[1];
+    if(prefix.startsWith('T')) prefix='T'+fixOcrDigits(prefix.slice(1));
+    else prefix='EG'+fixOcrDigits(prefix.slice(2));
+    const serial=fixOcrDigits(m[2]);
+    const out=`${prefix}-${serial}`;
+    return GR_PREFIXES.includes(prefix)?out:'';
   }
 
   function extractOcrGuideCandidates(text){
     const raw=String(text||'').toUpperCase().replace(/[–—_]/g,'-');
     const compact=raw.replace(/\s+/g,'');
     const tokens=[];
-    const re=/T[0-9OILSB]{3}-?[0-9OILSB]{8}/g;
+    const re=/(?:T[0-9OILSB]{3}|EG[0-9OILSB]{2})-?[0-9OILSB]{8}/g;
     for(const source of [raw,compact]){
       let m;
       while((m=re.exec(source))!==null){
@@ -441,38 +463,53 @@
     return tokens;
   }
 
-  function scannerRecordCard(r, votes, total){
-    const isReview=state.review.some(x=>String(x.id)===String(r.id));
-    return `<div class="scanner-success">
-      <div class="scanner-success-icon">✓</div>
-      <div class="scanner-success-copy">
-        <div class="eyebrow">GR CONFIRMADA · ${votes}/${total} LECTURAS</div>
-        <h3>${esc(r.gr)}</h3>
-        <div class="scanner-meta-grid">
-          <div><span>GRT</span><strong>${esc(r.grt||'—')}</strong></div>
-          <div><span>Pedido</span><strong>${esc(r.order||'—')}</strong></div>
-          <div><span>Distrito</span><strong>${esc(r.district||'—')}</strong></div>
-          <div class="scanner-meta-wide"><span>Destinatario</span><strong>${esc(r.recipient||'—')}</strong></div>
-        </div>
-        ${isReview?'<div class="alert-box">Esta GR existe, pero está en <strong>Importar data → Por revisar</strong>. No se abrirá el registro hasta confirmarla.</div>':''}
-        <div class="scanner-result-actions">
-          ${isReview?'':`<button class="btn primary" id="scannerOpenRecord">ABRIR REGISTRO</button>`}
-          <button class="btn" id="scannerReadAnother">ESCANEAR OTRA</button>
-        </div>
-      </div>
-    </div>`;
+  function scannerAcceptedHtml(){
+    if(!grScannerAccepted.length) return '<div class="scanner-empty">Aun no hay guias confirmadas.</div>';
+    return `<div class="scanner-ruma-list">${grScannerAccepted.slice().reverse().map((r,i)=>`<div class="scanner-ruma-row"><span class="scanner-ruma-check">✓</span><div><strong>${esc(r.gr)}</strong><small>${esc(r.grt||'—')} · ${esc(r.recipient||'—')}</small></div></div>`).join('')}</div>`;
+  }
+
+  function updateScannerRuma(){
+    const count=$('#grScannerCount'); if(count) count.textContent=String(grScannerAccepted.length);
+    const list=$('#grScannerAcceptedList'); if(list) list.innerHTML=scannerAcceptedHtml();
+  }
+
+  function scannerFlash(kind, title, subtitle=''){
+    const target=$('#grScannerTarget'), status=$('#grScannerStatus');
+    if(target){
+      target.classList.remove('scan-ok','scan-warn','scan-error');
+      if(kind) target.classList.add(kind);
+    }
+    if(status){
+      status.className=`scanner-status ${kind||''}`.trim();
+      status.innerHTML=`<strong>${esc(title)}</strong>${subtitle?`<span>${esc(subtitle)}</span>`:''}`;
+    }
+  }
+
+  function scannerBeep(){
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(AC){
+        const ctx=new AC(); const osc=ctx.createOscillator(); const gain=ctx.createGain();
+        osc.type='sine'; osc.frequency.value=880; gain.gain.value=.08;
+        osc.connect(gain); gain.connect(ctx.destination); osc.start();
+        setTimeout(()=>{ try{osc.stop();ctx.close();}catch(_e){} },110);
+      }
+    }catch(_e){}
+    try{ if(navigator.vibrate) navigator.vibrate(70); }catch(_e){}
   }
 
   async function ensureGrScannerWorker(statusEl){
     if(grScannerWorker) return grScannerWorker;
-    if(!window.Tesseract) throw new Error('No se pudo cargar el lector OCR. Revisa la conexión a internet.');
-    if(statusEl) statusEl.textContent='Preparando lector OCR por primera vez…';
+    if(!window.Tesseract) throw new Error('No se pudo cargar el lector OCR. Revisa la conexion a internet.');
+    if(statusEl) statusEl.textContent='Preparando lector por primera vez…';
     grScannerWorker=await window.Tesseract.createWorker('eng',1,{logger:m=>{
-      if(!statusEl||!m) return;
-      if(m.status==='recognizing text' && typeof m.progress==='number') statusEl.textContent=`Leyendo número… ${Math.round(m.progress*100)}%`;
+      if(!statusEl||!m||!grScannerRunning) return;
+      if(m.status==='recognizing text' && typeof m.progress==='number' && m.progress>.35){
+        statusEl.innerHTML=`<strong>Buscando numero de guia…</strong><span>${Math.round(m.progress*100)}%</span>`;
+      }
     }});
     await grScannerWorker.setParameters({
-      tessedit_char_whitelist:'T0123456789-OILSB',
+      tessedit_char_whitelist:'TEG0123456789-OILSB',
       tessedit_pageseg_mode:'7',
       preserve_interword_spaces:'1'
     });
@@ -481,13 +518,11 @@
 
   function captureScannerCrop(video){
     const vw=video.videoWidth, vh=video.videoHeight;
-    if(!vw||!vh) throw new Error('La cámara todavía no está lista.');
-    // La caja visible ocupa aproximadamente el centro horizontal del video.
+    if(!vw||!vh) throw new Error('La camara todavia no esta lista.');
     const target=$('#grScannerTarget');
     const vr=video.getBoundingClientRect(); const tr=target?.getBoundingClientRect();
-    let sx=vw*0.06, sy=vh*0.36, sw=vw*0.88, sh=vh*0.28;
+    let sx=vw*.2, sy=vh*.2, sw=vw*.6, sh=vh*.6;
     if(target&&vr.width&&vr.height&&tr){
-      // Convierte el rectángulo rojo visible a coordenadas reales del video, incluso con object-fit: cover.
       const fitScale=Math.max(vr.width/vw,vr.height/vh);
       const renderedW=vw*fitScale, renderedH=vh*fitScale;
       const offX=(vr.width-renderedW)/2, offY=(vr.height-renderedH)/2;
@@ -495,91 +530,158 @@
       sw=Math.min(vw-sx,tr.width/fitScale); sh=Math.min(vh-sy,tr.height/fitScale);
     }
     sx=Math.round(sx); sy=Math.round(sy); sw=Math.max(1,Math.round(sw)); sh=Math.max(1,Math.round(sh));
-    const scale=Math.max(1,Math.min(2.4,1600/sw));
+
+    // El marco visible es amplio/cuadrado para apuntar facil. OCR analiza una banda central
+    // suficientemente alta dentro del marco, donde debe quedar el numero de GR.
+    const bandY=Math.round(sy+sh*.39), bandH=Math.round(sh*.22);
+    const outW=Math.min(900,Math.max(620,Math.round(sw*1.05)));
+    const scale=outW/sw;
     const canvas=document.createElement('canvas');
-    canvas.width=Math.round(sw*scale); canvas.height=Math.round(sh*scale);
+    canvas.width=Math.round(sw*scale); canvas.height=Math.max(180,Math.round(bandH*scale));
     const ctx=canvas.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(video,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
-    // Alto contraste para texto negro sobre papel blanco.
+    ctx.drawImage(video,sx,bandY,sw,bandH,0,0,canvas.width,canvas.height);
     const img=ctx.getImageData(0,0,canvas.width,canvas.height); const d=img.data;
+    // Contraste fuerte adaptado a texto negro sobre papel blanco.
     for(let i=0;i<d.length;i+=4){
-      const gray=Math.round(0.299*d[i]+0.587*d[i+1]+0.114*d[i+2]);
-      const v=gray>168?255:0; d[i]=d[i+1]=d[i+2]=v;
+      const gray=Math.round(.299*d[i]+.587*d[i+1]+.114*d[i+2]);
+      const v=gray>158?255:0; d[i]=d[i+1]=d[i+2]=v;
     }
     ctx.putImageData(img,0,0);
     return canvas;
   }
 
-  async function runGrScannerRead(){
-    if(grScannerBusy) return;
-    const video=$('#grScannerVideo'), status=$('#grScannerStatus'), result=$('#grScannerResult'), readBtn=$('#grScannerReadBtn');
-    if(!video||!status||!result||!readBtn) return;
-    grScannerBusy=true; readBtn.disabled=true; result.innerHTML='';
+  async function tuneScannerCamera(track){
+    try{
+      const caps=track.getCapabilities?.()||{};
+      const advanced=[];
+      if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) advanced.push({focusMode:'continuous'});
+      if(caps.zoom){
+        const z=Math.min(caps.zoom.max||1.7,Math.max(caps.zoom.min||1,1.35));
+        advanced.push({zoom:z});
+      }
+      if(advanced.length) await track.applyConstraints({advanced});
+    }catch(_e){}
+  }
+
+  async function scanOneContinuousFrame(token){
+    if(!grScannerRunning||token!==grScannerLoopToken||Date.now()<grScannerCooldownUntil) return;
+    const video=$('#grScannerVideo'), status=$('#grScannerStatus');
+    if(!video||!status||grScannerBusy) return;
+    grScannerBusy=true;
     try{
       const worker=await ensureGrScannerWorker(status);
-      status.textContent='Mantén la guía quieta dentro del recuadro…';
-      const frames=[];
-      for(let i=0;i<3;i++){
-        frames.push(captureScannerCrop(video));
-        await new Promise(r=>setTimeout(r,220));
-      }
+      if(!grScannerRunning||token!==grScannerLoopToken) return;
+      const frame=captureScannerCrop(video);
+      const ret=await worker.recognize(frame);
+      if(!grScannerRunning||token!==grScannerLoopToken) return;
+      const candidates=extractOcrGuideCandidates(ret?.data?.text||'');
       const guideMap=scannerGuideMap();
-      const votes=new Map(); const readings=[];
-      for(let i=0;i<frames.length;i++){
-        status.textContent=`Analizando lectura ${i+1} de ${frames.length}…`;
-        const ret=await worker.recognize(frames[i]);
-        const text=ret?.data?.text||'';
-        const candidates=extractOcrGuideCandidates(text);
-        const existing=candidates.filter(c=>guideMap.has(c));
-        readings.push({text,candidates,existing,confidence:Number(ret?.data?.confidence||0)});
-        existing.forEach(c=>votes.set(c,(votes.get(c)||0)+1));
-      }
-      const ranked=[...votes.entries()].sort((a,b)=>b[1]-a[1]);
-      const best=ranked[0]; const second=ranked[1];
-      if(best && best[1]>=2 && (!second || best[1]>second[1])){
-        const r=guideMap.get(best[0]);
-        status.textContent='GR confirmada contra la base Roche.';
-        result.innerHTML=scannerRecordCard(r,best[1],frames.length);
-        const open=$('#scannerOpenRecord'); if(open) open.onclick=()=>{ stopGrScanner(); closeModal(); $('#quickSearch').value=r.gr; $('#quickResult').classList.remove('hidden'); openQuickRecord(r); };
-        $('#scannerReadAnother').onclick=()=>{ result.innerHTML=''; status.textContent='Alinea el número de GR y vuelve a leer.'; readBtn.disabled=false; grScannerBusy=false; };
-        if(navigator.vibrate) navigator.vibrate(80);
+      const existing=[...new Set(candidates.filter(c=>guideMap.has(c)))];
+
+      if(existing.length!==1){
+        grScannerLastCandidate=''; grScannerCandidateStreak=0;
+        if(existing.length>1) scannerFlash('scan-warn','Lectura dudosa','Se detecto mas de una GR. No se agrego nada.');
+        else scannerFlash('','Escaneando…','Coloca el numero de GR dentro del cuadro.');
         return;
       }
-      const seen=[...new Set(readings.flatMap(x=>x.existing))];
-      status.textContent='No pude confirmar la GR con seguridad.';
-      result.innerHTML=`<div class="scanner-warning"><strong>No se agregó ni abrió ninguna guía.</strong><p>${seen.length?`Detecté posibles coincidencias: ${seen.map(esc).join(', ')}, pero no coincidieron en al menos 2 de 3 lecturas.`:'No obtuve una coincidencia exacta contra la base Roche.'}</p><small>Acerca la cámara, evita reflejos y coloca únicamente “T006-…” dentro del recuadro.</small></div>`;
+
+      const candidate=existing[0];
+      if(candidate===grScannerLastCandidate) grScannerCandidateStreak++;
+      else { grScannerLastCandidate=candidate; grScannerCandidateStreak=1; }
+
+      if(grScannerAcceptedSet.has(candidate)){
+        scannerFlash('scan-warn','Guia ya capturada',candidate);
+        grScannerLastCandidate=''; grScannerCandidateStreak=0;
+        grScannerCooldownUntil=Date.now()+900;
+        return;
+      }
+
+      if(grScannerCandidateStreak<2){
+        scannerFlash('scan-warn','Confirmando lectura…',candidate);
+        return;
+      }
+
+      const r=guideMap.get(candidate);
+      const isReview=state.review.some(x=>String(x.id)===String(r.id));
+      if(isReview){
+        scannerFlash('scan-error','GR en Por revisar',candidate+' · No se agrego a la ruma');
+        grScannerLastCandidate=''; grScannerCandidateStreak=0;
+        grScannerCooldownUntil=Date.now()+1200;
+        return;
+      }
+
+      grScannerAccepted.push(r); grScannerAcceptedSet.add(candidate); updateScannerRuma();
+      scannerFlash('scan-ok','✓ GR agregada',`${candidate} · ${r.recipient||''}`);
+      scannerBeep();
+      grScannerLastCandidate=''; grScannerCandidateStreak=0;
+      grScannerCooldownUntil=Date.now()+1150;
     }catch(err){
-      console.error('OCR scanner',err); status.textContent='No se pudo completar la lectura.'; result.innerHTML=`<div class="danger-box">${esc(err?.message||'Error de cámara/OCR')}</div>`;
+      console.error('continuous OCR scanner',err);
+      scannerFlash('scan-error','No pude leer esta guia','No se agrego nada. Sigue intentando.');
+      grScannerLastCandidate=''; grScannerCandidateStreak=0;
+      grScannerCooldownUntil=Date.now()+700;
     }finally{
-      if(!$('#scannerReadAnother')){ readBtn.disabled=false; grScannerBusy=false; }
+      grScannerBusy=false;
+    }
+  }
+
+  async function scannerContinuousLoop(token){
+    while(grScannerRunning&&token===grScannerLoopToken&&$('#grScannerVideo')){
+      if(Date.now()>=grScannerCooldownUntil) await scanOneContinuousFrame(token);
+      await sleep(160);
     }
   }
 
   async function openGrScanner(){
-    if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite abrir la cámara desde la web',true); return; }
-    openModal('Escanear GR','Prueba OCR: no modifica datos. Alinea únicamente el número impreso de la guía dentro del recuadro.',`
-      <div class="gr-scanner-shell">
-        <div class="gr-scanner-camera">
+    if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite abrir la camara desde la web',true); return; }
+    grScannerAccepted=[]; grScannerAcceptedSet=new Set(); grScannerLastCandidate=''; grScannerCandidateStreak=0; grScannerCooldownUntil=0;
+    openModal('Escaneo rapido de GR','Apunta al numero impreso. Verde = confirmada y agregada. Si la lectura es dudosa, NO se agrega.',`
+      <div class="gr-scanner-shell continuous-scanner">
+        <div class="scanner-counter-bar"><div><span>RUMA ACTUAL</span><strong><b id="grScannerCount">0</b> guias</strong></div><small>Prefijos: ${GR_PREFIXES.join(' · ')}</small></div>
+        <div class="gr-scanner-camera square-scanner-camera">
           <video id="grScannerVideo" autoplay playsinline muted></video>
-          <div class="gr-scanner-dim gr-scanner-dim-top"></div><div class="gr-scanner-dim gr-scanner-dim-bottom"></div>
-          <div class="gr-scanner-target" id="grScannerTarget"><span>ALINEA AQUÍ · T006-00107452</span></div>
+          <div class="gr-scanner-target square-target" id="grScannerTarget">
+            <div class="scanner-inner-band"></div>
+            <span>COLOCA AQUI EL NUMERO DE GR</span>
+          </div>
         </div>
-        <div class="scanner-help">No fotografíes toda la hoja. Acerca la cámara al número de GR ubicado en la parte superior derecha.</div>
-        <div id="grScannerStatus" class="scanner-status">Solicitando acceso a la cámara…</div>
-        <div id="grScannerResult"></div>
-        <div class="scanner-actions"><button type="button" class="btn primary big" id="grScannerReadBtn" disabled>LEER NÚMERO</button></div>
-      </div>`,'scanner-modal');
+        <div id="grScannerStatus" class="scanner-status"><strong>Abriendo camara…</strong><span>La lectura empezara automaticamente.</span></div>
+        <div class="scanner-ruma-panel"><div class="scanner-ruma-head"><strong>Guias confirmadas</strong><span>Solo entran lecturas seguras</span></div><div id="grScannerAcceptedList">${scannerAcceptedHtml()}</div></div>
+        <div class="scanner-actions continuous-actions"><button type="button" class="btn" id="grScannerUndoBtn" disabled>DESHACER ULTIMA</button><button type="button" class="btn primary big" id="grScannerFinishBtn">FINALIZAR RUMA</button></div>
+      </div>`,'scanner-modal continuous-scanner-modal');
     try{
-      grScannerStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+      grScannerStream=await navigator.mediaDevices.getUserMedia({
+        video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false
+      });
       const video=$('#grScannerVideo'); if(!video){ stopGrScanner(); return; }
       video.srcObject=grScannerStream; await video.play();
-      $('#grScannerStatus').textContent='Cámara lista. Alinea el número y presiona LEER NÚMERO.';
-      $('#grScannerReadBtn').disabled=false;
-      $('#grScannerReadBtn').onclick=runGrScannerRead;
+      const track=grScannerStream.getVideoTracks()[0]; if(track) await tuneScannerCamera(track);
+      grScannerRunning=true; const token=++grScannerLoopToken;
+      scannerFlash('','Escaneando…','Apunta al numero. Cuando se ponga verde, pasa a la siguiente guia.');
+      const undo=$('#grScannerUndoBtn');
+      if(undo){
+        const refreshUndo=()=>{ undo.disabled=!grScannerAccepted.length; };
+        refreshUndo();
+        const oldUpdate=updateScannerRuma;
+        // Actualiza tambien el estado del boton sin alterar la lista.
+        undo.onclick=()=>{
+          const r=grScannerAccepted.pop();
+          if(r) grScannerAcceptedSet.delete(String(r.gr||'').toUpperCase().replace(/\s+/g,''));
+          updateScannerRuma(); refreshUndo(); scannerFlash('','Ultima guia retirada','Continua escaneando.');
+        };
+        const obs=new MutationObserver(refreshUndo); const c=$('#grScannerCount'); if(c) obs.observe(c,{childList:true,characterData:true,subtree:true});
+      }
+      $('#grScannerFinishBtn').onclick=()=>{
+        grScannerRunning=false; grScannerLoopToken++;
+        if(grScannerStream){ try{grScannerStream.getTracks().forEach(t=>t.stop());}catch(_e){} grScannerStream=null; }
+        const status=$('#grScannerStatus'); if(status) status.innerHTML=`<strong>Ruma finalizada · ${grScannerAccepted.length} guias</strong><span>No se modifico ningun registro. Esta lista queda lista para el futuro registro masivo.</span>`;
+        const target=$('#grScannerTarget'); if(target) target.classList.remove('scan-ok','scan-warn','scan-error');
+        $('#grScannerFinishBtn').disabled=true; if(undo) undo.disabled=true;
+      };
+      scannerContinuousLoop(token);
     }catch(err){
       console.error('camera',err);
-      const status=$('#grScannerStatus'); if(status) status.textContent='No pude abrir la cámara.';
-      const result=$('#grScannerResult'); if(result) result.innerHTML='<div class="danger-box">Permite el acceso a la cámara en Chrome y vuelve a intentarlo.</div>';
+      scannerFlash('scan-error','No pude abrir la camara','Permite el acceso a la camara en Chrome y vuelve a intentarlo.');
     }
   }
 

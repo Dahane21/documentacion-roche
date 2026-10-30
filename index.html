@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.12 Web · Tradel</title>
-  <link rel="stylesheet" href="styles.css?v=2212" />
+  <title>Roche V2.2.13 Web · Tradel</title>
+  <link rel="stylesheet" href="styles.css?v=2213scan" />
 </head>
 <body>
   <div id="loginView" class="screen login-screen">
@@ -70,12 +70,12 @@
           <div class="quick-search-row">
             <input id="quickSearch" class="quick-search" autocomplete="off" placeholder="Ej. 103999" />
             <button id="quickSearchBtn" class="btn primary huge">BUSCAR GR</button>
-            <button id="scanGrCameraBtn" class="btn huge camera-scan-btn" type="button"><span aria-hidden="true">📷</span> ESCANEAR GR</button>
+            <button id="scanGrCameraBtn" class="btn huge camera-scan-btn" type="button"><span aria-hidden="true">📷</span> ESCANEO RÁPIDO</button>
           </div>
           <div id="quickResult" class="quick-result hidden"></div>
         </div>
         <div class="panel compact-info">
-          <strong>Flujo:</strong> buscar GR o usar <strong>Escanear GR</strong> → validar la guía encontrada → registrar documentos. El escáner está en modo prueba y no modifica datos automáticamente.
+          <strong>Flujo:</strong> buscar GR o usar <strong>Escaneo rápido</strong>. El escáner continuo agrega a una ruma temporal solo lecturas confirmadas; no modifica datos automáticamente.
         </div>
       </section>
 
@@ -255,6 +255,6 @@
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js"></script>
-  <script src="app.js?v=2212"></script>
+  <script src="app.js?v=2213scan"></script>
 </body>
 </html>

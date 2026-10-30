@@ -16,3 +16,5 @@ Regularización histórica: iniciar desde Pendientes / Parciales. Los resultados
 
 
 V2.2.12: prueba OCR de GR desde cámara en Registro rápido. No requiere SQL nuevo.
+
+V2.2.13: escaneo rápido continuo de rumas con confirmación verde, beep/vibración y validación contra la base. No requiere SQL nuevo.
