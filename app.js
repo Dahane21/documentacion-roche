@@ -51,7 +51,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.11-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.15-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -70,7 +70,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.11-web';
+    copy.version='2.2.15-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -110,7 +110,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.11-web';
+      state.version='2.2.15-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -133,7 +133,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || !$('#modalBackdrop')?.classList.contains('hidden'))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.11-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.15-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -315,6 +315,7 @@
     state.currentUser=displayUser(user);
     showApp();
     audit('Inicio de sesión');
+    pumpScanQueue();
   }
   $('#loginForm').addEventListener('submit',async e=>{
     e.preventDefault();
@@ -334,7 +335,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.11-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.15-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -346,14 +347,15 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.11-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.15-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
   function openPage(page){
     $$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.page===page));
     $$('.page').forEach(p=>p.classList.add('hidden')); $('#page-'+page).classList.remove('hidden');
-    const titles={quick:'Registro rápido',pending:'Pendientes / Parciales',ready:'Listos para enviar',indicators:'Indicadores documentarios',general:'Reporte general',history:'Historial Roche',closed:'Liquidados',import:'Importar data'};
+    if(page!=='scan') stopScanCamera?.();
+    const titles={scan:'Escanear ruma',quick:'Registro rápido',pending:'Pendientes / Parciales',ready:'Listos para enviar',indicators:'Indicadores documentarios',general:'Reporte general',history:'Historial Roche',closed:'Liquidados',import:'Importar data'};
     $('#pageTitle').textContent=titles[page]||''; renderAll(); refreshRemoteIfNewer();
   }
   function showApp(){
@@ -1637,7 +1639,362 @@
   ['indicatorView','indicatorFrom','indicatorTo','indicatorZone'].forEach(id=>$('#'+id).addEventListener('change',()=>{indicatorDrill='all';indicatorDrillZone='';renderIndicators();}));
   $('#indicatorReset').onclick=()=>{$('#indicatorFrom').value='';$('#indicatorTo').value='';$('#indicatorZone').value='';indicatorDrill='all';indicatorDrillZone='';renderIndicators();};
   $('#indicatorExport').onclick=()=>{if(typeof XLSX==='undefined'){toast('No se pudo cargar el módulo Excel.',true);return;}const data=window.__rocheIndicatorExport;const summary=data.counts.map(([indicador,valor])=>({Indicador:indicador,Valor:valor}));const detail=data.rows.map(m=>({'Fecha emisión':m.issue,'Ubigeo / zona Roche':m.r.district,'GR Roche':m.r.gr,'GRT':m.r.grt,'Destinatario':m.r.recipient,'Estado':m.r.liquidated?'Liquidada':m.r.result,'Primera recepción Lima':m.first,'Último envío Signia':m.sent.map(x=>x.date).sort().at(-1)||'','Días sin liquidar':m.r.liquidated?'':m.age??'','Docs pendientes de envío':m.unsent?'Sí':'No'}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'RESUMEN');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(detail.length?detail:[{'GR Roche':'Sin registros'}]),'DETALLE GR');XLSX.writeFile(wb,'ROCHE_INDICADORES_'+new Date().toISOString().slice(0,10)+'.xlsx');};
-  function renderAll(){ ensureRegularizations(); renderBadges(); renderPending(); renderReady(); renderGeneral(); renderClosed(); renderHistory(); renderImport(); renderIndicators(); requestAnimationFrame(updateFloatingHScroll); }
+  // ---------- Escanear ruma (V2.2.15) ----------
+  // Flujo: se escanean los QR de SUNAT en el orden de la ruma → una función de Supabase (sunat-gre) devuelve
+  // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
+  // y se abre una ventana por lote para marcar lo que llegó físicamente.
+  const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
+  const SCAN_MAX_PARALLEL=3;
+  const lsGet=(k,def)=>{ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch(e){ return def; } };
+  const lsSet=(k,v)=>{ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){} };
+  let scan=lsGet(SCAN_KEY,null)||{items:[],lotes:null};
+  if(!Array.isArray(scan.items)) scan={items:[],lotes:null};
+  let qrCache=lsGet(QR_CACHE_KEY,{});
+  let scanStream=null, scanDetector=null, scanLoopTimer=null, scanBusy=false, scanLastHash='', scanLastSeenAt=0, scanRunning=0;
+  // Al recargar la página, lo que quedó "consultando" se vuelve a consultar.
+  scan.items.forEach(i=>{ if(i.status==='wait') i.status='queued'; });
+
+  function saveScan(){ lsSet(SCAN_KEY,scan); }
+  function scanHashFrom(text){
+    const raw=String(text||'').trim();
+    const m=raw.match(/[?&]hashqr=([^&\s]+)/i);
+    if(m){ try{ return decodeURIComponent(m[1]).replace(/ /g,'+'); }catch(e){ return m[1].replace(/ /g,'+'); } }
+    return '';
+  }
+  function findRecordByGR(gr){
+    const g=String(gr||'').toUpperCase();
+    return allOperational().find(r=>String(r.gr||'').toUpperCase()===g)||null;
+  }
+  // Valida una GR contra la base y deja el ítem listo (ok) o con su motivo de error.
+  function validateScanItem(item){
+    const r=findRecordByGR(item.gr);
+    if(!r){
+      const inReview=state.review.find(x=>String(x.gr||'').toUpperCase()===String(item.gr||'').toUpperCase() && !x.reviewResolved);
+      item.status='error'; item.error=inReview?'Está en “Por revisar” (Importar data)':'No está en la base. ¿Ya importaste la data de hoy?'; return;
+    }
+    if(r.liquidated){ item.status='error'; item.error='Esta guía ya está liquidada'; item.recordId=r.id; return; }
+    const dup=scan.items.find(x=>x!==item && x.recordId===r.id && x.status!=='error');
+    if(dup){ item.status='error'; item.error='Duplicada: ya está en esta ruma'; return; }
+    item.recordId=r.id; item.status='ok'; item.error='';
+  }
+  function scanSuggestedType(item,r){
+    if(r.type) return r.type;
+    const m=String(item.motivo||'').toLowerCase();
+    const cen=/cenares/i.test(`${item.destinatario||''} ${r.recipient||''}`);
+    if(m.includes('venta')) return cen?'Venta CENARES':'Venta';
+    if(m.includes('devoluc')) return 'Devolución';
+    return ''; // "Otros" en SUNAT puede ser suministro, instalación, mantenimiento…: lo elige Lisbet.
+  }
+
+  // ---- Consulta a SUNAT vía la función de Supabase ----
+  async function lookupScanItem(item){
+    item.status='wait'; renderScan();
+    try{
+      let info=qrCache[item.hash];
+      if(!info){
+        if(!db?.functions||!authUser) throw new Error('Inicia sesión para consultar SUNAT');
+        const {data,error}=await db.functions.invoke('sunat-gre',{body:{hashqr:item.hash}});
+        if(error){
+          let msg='No se pudo consultar SUNAT';
+          try{ const j=await error.context?.json?.(); if(j?.error) msg=j.error; }catch(e){}
+          if(/not found|404/i.test(String(error.message||''))) msg='Falta instalar la función sunat-gre en Supabase';
+          throw new Error(msg);
+        }
+        if(!data?.ok||!data.gr) throw new Error(data?.error||'SUNAT no devolvió el número de guía');
+        info={gr:data.gr,motivo:data.motivo||'',motivoDetalle:data.motivoDetalle||'',destinatario:data.destinatario||''};
+        qrCache[item.hash]=info; lsSet(QR_CACHE_KEY,qrCache);
+      }
+      Object.assign(item,info);
+      validateScanItem(item);
+      if(item.status==='error') scanFeedback('error');
+    }catch(err){
+      item.status='error'; item.error=err.message||'Error consultando SUNAT'; item.retry=true; scanFeedback('error');
+    }
+    saveScan(); renderScan(); pumpScanQueue();
+  }
+  function pumpScanQueue(){
+    const queued=scan.items.filter(i=>i.status==='queued');
+    while(scanRunning<SCAN_MAX_PARALLEL && queued.length){
+      const item=queued.shift(); scanRunning++;
+      lookupScanItem(item).finally(()=>{ scanRunning--; pumpScanQueue(); });
+    }
+  }
+
+  // ---- Sonido, vibración y destello ----
+  let audioCtx=null;
+  function beep(freq,ms,delay=0){
+    try{
+      audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+      const o=audioCtx.createOscillator(), g=audioCtx.createGain(), t=audioCtx.currentTime+delay/1000;
+      o.frequency.value=freq; o.type='sine'; g.gain.setValueAtTime(.25,t); g.gain.exponentialRampToValueAtTime(.001,t+ms/1000);
+      o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t+ms/1000);
+    }catch(e){}
+  }
+  function scanFeedback(kind){
+    if(kind==='ok'){ beep(1046,130); navigator.vibrate?.(80); }
+    else if(kind==='dup'){ beep(520,90); beep(520,90,140); navigator.vibrate?.([60,60,60]); }
+    else { beep(220,350); navigator.vibrate?.([200,80,200]); }
+    const f=$('#scanFlash'); if(f){ f.className='scan-flash '+kind; clearTimeout(scanFeedback._t); scanFeedback._t=setTimeout(()=>f.className='scan-flash',380); }
+  }
+  function scanCameraMsg(text){ const el=$('#scanCameraMsg'); if(el) el.textContent=text; }
+
+  // ---- Agregar a la ruma ----
+  function addScannedHash(hash){
+    const existing=scan.items.find(i=>i.hash===hash);
+    if(existing){ scanFeedback('dup'); scanCameraMsg(`Ya escaneada: ${existing.gr||'consultando…'}`); return; }
+    const item={id:uid('scan'),hash,gr:'',status:'queued',error:'',at:nowIso()};
+    const cached=qrCache[hash];
+    if(cached){ Object.assign(item,cached); validateScanItem(item); }
+    scan.items.push(item); saveScan();
+    if(item.status==='error'){ scanFeedback('error'); scanCameraMsg(`${item.gr}: ${item.error}`); }
+    else { scanFeedback('ok'); scanCameraMsg(`Leída (${scan.items.length}). Pasa a la siguiente guía`); }
+    renderScan(); pumpScanQueue();
+  }
+  function addManualScan(){
+    const q=$('#scanManual').value.trim(); if(!q) return;
+    const digits=normalizeDigits(q), txt=q.toUpperCase();
+    const matches=allOperational().filter(r=>(txt.includes('-')&&String(r.gr).toUpperCase()===txt)||(digits&&normalizeDigits(r.gr).endsWith(digits)));
+    if(!matches.length){ scanFeedback('error'); toast(`No encontré una GR con “${q}”`,true); return; }
+    if(matches.length>1){ toast(`Hay ${matches.length} GR que terminan en ${q}. Escribe más dígitos.`,true); return; }
+    const r=matches[0];
+    const item={id:uid('scan'),hash:'',manual:true,gr:r.gr,motivo:'',motivoDetalle:'',destinatario:r.recipient||'',status:'ok',error:'',at:nowIso()};
+    validateScanItem(item);
+    if(item.status==='error'){ scanFeedback(item.error.startsWith('Duplicada')?'dup':'error'); toast(`${r.gr}: ${item.error}`,true); return; }
+    scan.items.push(item); saveScan(); scanFeedback('ok'); $('#scanManual').value=''; renderScan(); $('#scanManual').focus();
+  }
+
+  // ---- Cámara ----
+  async function getScanDetector(){
+    if('BarcodeDetector' in window){
+      try{
+        const formats=await window.BarcodeDetector.getSupportedFormats();
+        if(formats.includes('qr_code')){ const d=new window.BarcodeDetector({formats:['qr_code']}); return async src=>(await d.detect(src)).map(x=>x.rawValue); }
+      }catch(e){}
+    }
+    // Respaldo para computadoras sin lector nativo (Chrome de Android sí lo tiene).
+    if(!window.ZXingWASM){
+      await new Promise((ok,fail)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.6/dist/iife/reader/index.js'; s.onload=ok; s.onerror=()=>fail(new Error('No se pudo cargar el lector de QR')); document.head.appendChild(s); });
+    }
+    const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d',{willReadFrequently:true});
+    return async video=>{
+      const w=video.videoWidth, h=video.videoHeight; if(!w||!h) return [];
+      canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h);
+      const res=await window.ZXingWASM.readBarcodes(ctx.getImageData(0,0,w,h),{formats:['QRCode'],tryHarder:false,maxNumberOfSymbols:1});
+      return res.filter(x=>x.isValid!==false).map(x=>x.text);
+    };
+  }
+  async function startScanCamera(){
+    if(scanStream) return;
+    if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite usar la cámara (se necesita HTTPS)',true); return; }
+    try{
+      scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},audio:false});
+      const v=$('#scanVideo'); v.srcObject=scanStream; await v.play();
+      $('#scanCameraBox').classList.remove('hidden'); $('#scanStart').classList.add('hidden'); $('#scanStop').classList.remove('hidden');
+      scanCameraMsg('Cargando lector…');
+      scanDetector=await getScanDetector();
+      scanCameraMsg('Apunta al QR de la guía');
+      beep(1,1); // desbloquea el audio en el celular (requiere un toque previo)
+      scanLoop();
+    }catch(err){ console.error(err); stopScanCamera(); toast(err.name==='NotAllowedError'?'Permite el acceso a la cámara para escanear':(err.message||'No se pudo abrir la cámara'),true); }
+  }
+  function stopScanCamera(){
+    clearTimeout(scanLoopTimer); scanLoopTimer=null;
+    if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
+    const v=$('#scanVideo'); if(v) v.srcObject=null;
+    $('#scanCameraBox')?.classList.add('hidden'); $('#scanStart')?.classList.remove('hidden'); $('#scanStop')?.classList.add('hidden');
+  }
+  async function scanLoop(){
+    if(!scanStream) return;
+    if(!scanBusy && scanDetector){
+      scanBusy=true;
+      try{
+        const values=await scanDetector($('#scanVideo'));
+        const hash=values.map(scanHashFrom).find(Boolean);
+        const now=Date.now();
+        if(hash){
+          // La misma guía no se vuelve a procesar mientras siga frente a la cámara.
+          if(hash!==scanLastHash || now-scanLastSeenAt>2500) addScannedHash(hash);
+          scanLastHash=hash; scanLastSeenAt=now;
+        }else if(values.length){
+          if(now-scanLastSeenAt>2500){ scanCameraMsg('Ese QR no es de una guía SUNAT'); }
+        }
+      }catch(e){ /* cuadro sin QR */ }
+      scanBusy=false;
+    }
+    scanLoopTimer=setTimeout(scanLoop,120);
+  }
+
+  // ---- Lista de la ruma ----
+  function renderScan(){
+    const badge=$('#scanBadge'); if(badge) badge.textContent=scan.items.length;
+    const list=$('#scanList'); if(!list) return;
+    const ok=scan.items.filter(i=>i.status==='ok').length, wait=scan.items.filter(i=>i.status==='wait'||i.status==='queued').length, err=scan.items.filter(i=>i.status==='error').length;
+    $('#scanSummary').innerHTML=scan.items.length?`<span class="scan-chip">${scan.items.length} escaneadas</span><span class="scan-chip ok">${ok} listas</span>${wait?`<span class="scan-chip wait">${wait} consultando SUNAT…</span>`:''}${err?`<span class="scan-chip err">${err} con problema</span>`:''}`:'';
+    const resume=$('#scanResume');
+    const pendingLotes=(scan.lotes||[]).filter(l=>!l.done);
+    if(pendingLotes.length){ resume.className='scan-resume'; resume.innerHTML=`<div><strong>Tienes ${pendingLotes.length} lote(s) por registrar de la ruma anterior.</strong><br><small>Termínalos antes de escanear una ruma nueva.</small></div><button class="btn primary big" id="scanResumeBtn">CONTINUAR CON LOS LOTES</button>`; $('#scanResumeBtn').onclick=()=>openNextLote(); }
+    else { resume.className='hidden'; resume.innerHTML=''; }
+    if(!scan.items.length){ list.innerHTML='<div class="scan-empty">Aún no hay guías en esta ruma. Toca <b>INICIAR CÁMARA</b> y apunta al QR de cada guía.</div>'; return; }
+    list.innerHTML=scan.items.map((i,n)=>{
+      const r=i.recordId?getRecord(i.recordId):null;
+      const cls=i.status==='ok'?'ok':i.status==='error'?'error':'wait';
+      const sunat=i.manual?'Agregada a mano':(i.motivo?`SUNAT: ${i.motivo}`:'');
+      const msg=i.status==='ok'?`✓ ${esc(r?.grt||'')} · ${esc(sunat)}`:i.status==='error'?`✗ ${esc(i.error)}`:'Consultando SUNAT…';
+      return `<div class="scan-item ${cls}"><div class="scan-num">${n+1}</div><div class="scan-main"><b>${esc(i.gr||'Guía leída')}</b><small>${esc(r?.recipient||i.destinatario||'')}${r?.district?' · '+esc(r.district):''}</small><div class="scan-msg">${msg}</div></div><div class="scan-side">${i.status==='error'&&i.retry?`<button class="btn small" data-scan-retry="${i.id}">Reintentar</button>`:''}<button class="btn small" data-scan-del="${i.id}" title="Quitar de la ruma">Quitar</button></div></div>`;
+    }).reverse().join('');
+    $$('[data-scan-del]',list).forEach(b=>b.onclick=()=>{ scan.items=scan.items.filter(i=>i.id!==b.dataset.scanDel); saveScan(); renderScan(); });
+    $$('[data-scan-retry]',list).forEach(b=>b.onclick=()=>{ const it=scan.items.find(i=>i.id===b.dataset.scanRetry); if(it){ it.status='queued'; it.retry=false; it.error=''; saveScan(); pumpScanQueue(); renderScan(); } });
+  }
+
+  // ---- Armado de lotes: uno por GRT, en el orden en que se escaneó ----
+  function buildLotes(items){
+    const lotes=[], byGrt={};
+    items.forEach(i=>{
+      const r=getRecord(i.recordId); if(!r) return;
+      const key=r.grt?`grt:${r.grt}`:`gr:${r.id}`;
+      let lote=byGrt[key];
+      if(!lote){ lote={id:uid('lote'),grt:r.grt||'',baseId:r.id,items:[],done:false,skipped:false}; byGrt[key]=lote; lotes.push(lote); }
+      else if(lotes[lotes.length-1]!==lote) i.separated=true; // estaba lejos de su grupo en la ruma física
+      lote.items.push({recordId:r.id,gr:r.gr,motivo:i.motivo||'',destinatario:i.destinatario||'',separated:!!i.separated,manual:!!i.manual});
+    });
+    return lotes;
+  }
+  function finishRuma(){
+    if((scan.lotes||[]).some(l=>!l.done)){ openNextLote(); return; }
+    const waiting=scan.items.filter(i=>i.status==='wait'||i.status==='queued');
+    if(waiting.length){ toast(`Espera: ${waiting.length} guía(s) se están consultando en SUNAT`,true); return; }
+    scan.items.forEach(i=>{ if(i.status==='ok') validateScanItem(i); }); // por si la base cambió mientras se escaneaba
+    const ok=scan.items.filter(i=>i.status==='ok'), bad=scan.items.filter(i=>i.status!=='ok');
+    if(!ok.length){ toast('No hay guías listas para registrar',true); return; }
+    if(bad.length && !confirm(`${bad.length} guía(s) tienen problema y NO se registrarán:\n\n${bad.map(i=>`${i.gr||'QR'}: ${i.error}`).join('\n')}\n\nSepáralas físicamente. ¿Continuar con las ${ok.length} guías correctas?`)) return;
+    stopScanCamera();
+    scan.lotes=buildLotes(ok); scan.items=[]; saveScan(); renderScan();
+    audit('Ruma escaneada',`${ok.length} GR en ${scan.lotes.length} lote(s)`);
+    openNextLote();
+  }
+
+  // ---- Ventana por lote ----
+  function scanTypeOptions(selected){
+    return `<option value="">— Elegir tipo —</option>${TYPES.map(t=>`<option ${t===selected?'selected':''}>${esc(t)}</option>`).join('')}`;
+  }
+  function stateSelect(cls,label){
+    return `<label>${label} <select class="${cls}"><option value="">—</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></label>`;
+  }
+  function loteDocsHtml(r,type){
+    const acc=packageAccumulatedReference(r);
+    if(!type) return `${acc}<span class="muted">Elige el tipo para ver qué marcar.</span>`;
+    const extra=`<div class="mini-extra"><input class="pkgExtraInput" placeholder="Adicional (ej. Plantilla)"><button type="button" class="btn tiny-btn pkgAddExtra">Agregar</button><span class="pkgExtraTags"></span></div>`;
+    if(SIMPLE_TYPES.includes(type)) return `${acc}<div class="mini-doc-note">Se registra la GR si está marcada como “llegó”.</div>${extra}`;
+    if(type==='Venta') return `${acc}<div class="mini-states">${stateSelect('pkgFact','Factura')}${stateSelect('pkgOC','OC')}</div>${extra}`;
+    if(type==='Venta CENARES'){
+      const d=sumDocs(r,false);
+      const cnt=(cls,label,have)=>`<label class="lote-count">${label} <input class="${cls} missing" type="number" min="0" max="4" inputmode="numeric" placeholder="?"><span class="mini-expected">llegaron · esperadas 4${have?` (ya ${have})`:''}</span></label>`;
+      return `${acc}<div class="mini-counts">${cnt('pkgCntGR','GR',d.grCopies)}${cnt('pkgCntAct','Actas',d.actas)}${cnt('pkgCntPec','Pecosas',d.pecosas)}</div><div class="mini-states">${stateSelect('pkgFact','Factura')}${stateSelect('pkgOC','OC')}</div>${extra}`;
+    }
+    return `${acc}${extra}`;
+  }
+  async function waitForSync(){
+    for(let i=0;i<60 && (remoteSaveTimer||remoteSaving);i++) await new Promise(r=>setTimeout(r,100));
+    await refreshRemoteIfNewer();
+  }
+  function openNextLote(){
+    const lotes=scan.lotes||[];
+    let idx=lotes.findIndex(l=>!l.done && !l.skipped);
+    if(idx<0){ lotes.forEach(l=>l.skipped=false); idx=lotes.findIndex(l=>!l.done); }
+    if(idx<0){
+      const total=lotes.length; scan.lotes=null; saveScan(); renderScan(); renderAll();
+      if(total) toast(`Ruma registrada: ${total} lote(s). Revisa “Listos para enviar”.`);
+      return;
+    }
+    openLote(idx);
+  }
+  function openLote(idx){
+    const lotes=scan.lotes, lote=lotes[idx];
+    const scannedIds=new Set(lote.items.map(i=>i.recordId));
+    const base=getRecord(lote.baseId)||getRecord(lote.items[0]?.recordId);
+    if(!base){ lote.done=true; saveScan(); openNextLote(); return; }
+    // Otras GR de la misma GRT que siguen abiertas y no se escanearon: se muestran sin marcar.
+    const others=lote.grt?groupFor(base).filter(r=>!scannedIds.has(r.id) && !r.liquidated).sort((a,b)=>String(a.gr).localeCompare(String(b.gr))):[];
+    const rows=[...lote.items.map(i=>({r:getRecord(i.recordId),info:i,scanned:true})).filter(x=>x.r), ...others.map(r=>({r,info:{},scanned:false}))];
+    const doneCount=lotes.filter(l=>l.done).length;
+    const grtDone=lote.grt && isGRTReceived(base);
+    const separated=lote.items.filter(i=>i.separated).map(i=>i.gr);
+    const html=`<div class="lote-progress"><span style="width:${Math.round(doneCount/lotes.length*100)}%"></span></div>
+      <div class="lote-head"><div><span>GRT</span><strong>${esc(lote.grt||'—')}</strong></div><div><span>Destinatario</span><strong>${esc(base.recipient||'—')}</strong></div><div><span>Dirección</span><strong>${esc(base.address||'—')}</strong></div>
+        <label class="shared-grt"><input id="loteGRT" type="checkbox" ${grtDone?'disabled checked':'checked'} ${lote.grt?'':'disabled'}><b>GRT RECIBIDA</b><small>${grtDone?'Ya registrada antes':lote.grt?'Desmarca si NO llegó la guía de Tradel':'Sin GRT'}</small></label></div>
+      ${separated.length?`<div class="alert-box">Estas guías estaban <b>separadas de su grupo</b> en la ruma; júntalas físicamente con este lote: <b>${separated.map(esc).join(', ')}</b></div>`:''}
+      ${others.length?`<div class="alert-box">Esta GRT tiene <b>${others.length} GR más</b> que no se escanearon (abajo, sin marcar). Márcalas solo si llegaron.</div>`:''}
+      <div class="lote-rows">${rows.map(({r,info,scanned})=>{
+        const t=scanned?scanSuggestedType(info,r):(r.type||'');
+        const sunat=info.motivo?`SUNAT: ${info.motivo}${info.motivo.toLowerCase().includes('venta')?'':' · elige el tipo'}`:(scanned?(info.manual?'Agregada a mano':''):'No escaneada');
+        return `<div class="lote-row ${scanned?'arrived':'not-scanned'}" data-lote-row="${r.id}">
+          <label class="lote-arrived"><input class="loteArrived" type="checkbox" ${scanned?'checked':''}>LLEGÓ</label>
+          <div class="lote-gr"><b>${esc(r.gr)}</b><small>Pedido ${esc(r.order||'—')}</small><small>${esc(r.result||'')}</small>${info.separated?'<span class="lote-tag">Estaba separada</span>':''}</div>
+          <div class="lote-type"><select class="loteType ${t?'':'empty'}">${scanTypeOptions(t)}</select><small>${esc(sunat)}</small></div>
+          <div class="lote-docs pkgDocs">${loteDocsHtml(r,t)}</div></div>`;
+      }).join('')}</div>
+      <div class="modal-actions"><button class="btn" id="loteClose">Cerrar y continuar después</button><button class="btn" id="loteSkip">Saltar este lote</button><button class="btn primary big" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
+    openModal(`Lote ${doneCount+1} de ${lotes.length}`, 'Revisa lo físico de esta GRT y marca lo que llegó. Al guardar pasa al siguiente lote.', html, 'lote-modal');
+    const body=$('#modalBody');
+    $$('[data-lote-row]',body).forEach(row=>{
+      const r=getRecord(row.dataset.loteRow), sel=$('.loteType',row), docs=$('.lote-docs',row), chk=$('.loteArrived',row);
+      wirePackageExtra(docs); wireLoteCounts(docs);
+      sel.onchange=()=>{ sel.classList.toggle('empty',!sel.value); docs.innerHTML=loteDocsHtml(r,sel.value); wirePackageExtra(docs); wireLoteCounts(docs); };
+      chk.onchange=()=>row.classList.toggle('arrived',chk.checked);
+    });
+    $('#loteClose').onclick=()=>{ closeModal(); renderScan(); };
+    $('#loteSkip').onclick=()=>{ lote.skipped=true; saveScan(); closeModal(); openNextLote(); };
+    $('#loteSave').onclick=()=>saveLote(idx);
+  }
+  function wireLoteCounts(root){ $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',root).forEach(inp=>inp.oninput=()=>inp.classList.toggle('missing',inp.value==='')); }
+  async function saveLote(idx){
+    const lote=scan.lotes[idx], body=$('#modalBody');
+    const rows=$$('[data-lote-row]',body).map(row=>({row,r:getRecord(row.dataset.loteRow),arrived:$('.loteArrived',row).checked,type:$('.loteType',row).value,docs:$('.lote-docs',row)}));
+    const arrived=rows.filter(x=>x.arrived);
+    const grtChk=$('#loteGRT'), grtNew=!!(lote.grt && grtChk && grtChk.checked && !grtChk.disabled);
+    const noType=arrived.find(x=>!x.type);
+    if(noType){ toast(`Elige el tipo de la GR ${noType.r.gr}`,true); $('.loteType',noType.row).focus(); return; }
+    const cenEmpty=arrived.find(x=>x.type==='Venta CENARES' && $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',x.docs).some(i=>i.value===''));
+    if(cenEmpty){ toast(`CENARES ${cenEmpty.r.gr}: escribe cuántas GR, actas y pecosas llegaron (0 si ninguna)`,true); $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',cenEmpty.docs).find(i=>i.value==='')?.focus(); return; }
+    if(!arrived.length && !grtNew && !confirm('No marcaste nada como recibido en este lote. ¿Pasar al siguiente sin registrar?')) return;
+    if(grtNew) setGRTReceived(lote.grt);
+    const clamp=v=>Math.max(0,Math.min(4,Number(v||0)));
+    arrived.forEach(({r,type,docs:area})=>{
+      r.type=type;
+      const docs={grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]};
+      if(type==='Venta CENARES'){ docs.grCopies=clamp($('.pkgCntGR',area)?.value); docs.actas=clamp($('.pkgCntAct',area)?.value); docs.pecosas=clamp($('.pkgCntPec',area)?.value); }
+      else docs.gr=1;
+      const fs=$('.pkgFact',area)?.value||'', os=$('.pkgOC',area)?.value||'';
+      if(fs==='Recibido')docs.factura=1; if(os==='Recibido')docs.oc=1;
+      if(type==='Venta'||type==='Venta CENARES'){
+        if(fs) r.facturaState=fs; else if(!r.facturaState) r.facturaState='No aplica';
+        if(os) r.ocState=os; else if(!r.ocState) r.ocState='No aplica';
+      }else{ if(!r.facturaState) r.facturaState='No aplica'; if(!r.ocState) r.ocState='No aplica'; }
+      $$('.extra-tag',area).forEach(x=>docs.extras.push(x.dataset.value));
+      r.receipts=r.receipts||[]; r.audit=r.audit||[];
+      r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs,sentReportId:null,facturaStateChange:fs||'',ocStateChange:os||'',annulled:false});
+      r.audit.push({at:nowIso(),user:state.currentUser,action:'Registro por escaneo de ruma',detail:docsTextFromRaw(docs)});
+      recalc(r);
+    });
+    rows.filter(x=>!x.arrived).forEach(x=>recalc(x.r));
+    lote.done=true; saveScan();
+    saveState(); audit('Registro de lote escaneado',`${lote.grt||'(sin GRT)'}: ${arrived.length} GR`);
+    closeModal(); renderAll();
+    toast(`Lote guardado: ${arrived.length} GR${grtNew?' + GRT':''}`);
+    await waitForSync(); // toma cambios de la otra usuaria antes de abrir el siguiente lote
+    openNextLote();
+  }
+
+  $('#scanStart').addEventListener('click',startScanCamera);
+  $('#scanStop').addEventListener('click',stopScanCamera);
+  $('#scanManualBtn').addEventListener('click',addManualScan);
+  $('#scanManual').addEventListener('keydown',e=>{ if(e.key==='Enter') addManualScan(); });
+  $('#scanUndo').addEventListener('click',()=>{ const last=scan.items.pop(); saveScan(); renderScan(); if(last) toast(`Quitada: ${last.gr||'última lectura'}`); });
+  $('#scanClear').addEventListener('click',()=>{ if(!scan.items.length) return; if(confirm(`¿Vaciar la ruma? Se quitarán ${scan.items.length} guías escaneadas (no se registró nada todavía).`)){ scan.items=[]; saveScan(); renderScan(); } });
+  $('#scanFinish').addEventListener('click',finishRuma);
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopScanCamera(); });
+
+  function renderAll(){ ensureRegularizations(); renderBadges(); renderPending(); renderReady(); renderGeneral(); renderClosed(); renderHistory(); renderImport(); renderIndicators(); renderScan(); requestAnimationFrame(updateFloatingHScroll); }
 
   async function initWebApp(){
     $('#loginView').classList.remove('hidden'); $('#appView').classList.add('hidden');

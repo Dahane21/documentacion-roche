@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.11 Web · Tradel</title>
-  <link rel="stylesheet" href="styles.css?v=2211" />
+  <title>Roche V2.2.15 Web · Tradel</title>
+  <link rel="stylesheet" href="styles.css?v=22150" />
 </head>
 <body>
   <div id="loginView" class="screen login-screen">
@@ -34,6 +34,7 @@
       <nav class="nav">
         <div class="nav-section-label">OPERACIÓN</div>
         <button class="nav-btn active" data-page="quick"><span class="nav-icon">＋</span> Registro rápido</button>
+        <button class="nav-btn" data-page="scan"><span class="nav-icon">⌗</span> Escanear ruma <span id="scanBadge" class="badge">0</span></button>
         <button class="nav-btn" data-page="pending"><span class="nav-icon">≡</span> Pendientes / Parciales <span id="pendingBadge" class="badge">0</span><span id="partialSidebarBadge" class="badge partial-nav-badge hidden" title="Guías parciales activas">0</span></button>
         <button class="nav-btn" data-page="ready"><span class="nav-icon">✓</span> Listos para enviar <span id="readyBadge" class="badge">0</span></button>
         <div class="nav-section-label">ANÁLISIS</div>
@@ -75,6 +76,41 @@
         </div>
         <div class="panel compact-info">
           <strong>Flujo:</strong> buscar GR → identificar tipo en la guía física → registrar documentos → guardar y continuar con la siguiente.
+        </div>
+      </section>
+
+      <section id="page-scan" class="page hidden">
+        <div class="panel scan-panel">
+          <div class="scan-head">
+            <div>
+              <div class="eyebrow">RUMA DE CARGOS · QR DE SUNAT</div>
+              <h3>Escanear ruma</h3>
+              <p class="muted">Escanea las guías en el orden de la ruma. Cada QR leído suena y queda en la lista; el número y el tipo se consultan en SUNAT mientras sigues escaneando. Al terminar, el sistema arma un lote por cada GRT, en el mismo orden en que escaneaste.</p>
+            </div>
+            <div class="scan-actions">
+              <button id="scanStart" class="btn primary huge">INICIAR CÁMARA</button>
+              <button id="scanStop" class="btn big hidden">Detener cámara</button>
+            </div>
+          </div>
+          <div id="scanCameraBox" class="scan-camera hidden">
+            <video id="scanVideo" playsinline muted></video>
+            <div class="scan-frame"></div>
+            <div id="scanFlash" class="scan-flash"></div>
+            <div id="scanCameraMsg" class="scan-camera-msg">Apunta al QR de la guía</div>
+          </div>
+          <div class="scan-manual">
+            <input id="scanManual" autocomplete="off" placeholder="¿Un QR no se lee? Escribe la GR o sus últimos dígitos" />
+            <button id="scanManualBtn" class="btn big">Agregar</button>
+          </div>
+          <div id="scanResume" class="hidden"></div>
+          <div id="scanSummary" class="scan-summary"></div>
+          <div id="scanList" class="scan-list"></div>
+          <div class="scan-bottom">
+            <button id="scanUndo" class="btn">Deshacer última</button>
+            <button id="scanClear" class="btn danger-outline">Vaciar ruma</button>
+            <span class="spacer"></span>
+            <button id="scanFinish" class="btn primary huge">FINALIZAR RUMA Y REGISTRAR LOTES</button>
+          </div>
         </div>
       </section>
 
@@ -253,6 +289,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
-  <script src="app.js?v=22111"></script>
+  <script src="app.js?v=22150"></script>
 </body>
 </html>
