@@ -322,3 +322,5 @@ body{background:var(--bg);color:var(--text)}
 /* Celular: el menú lateral pasa arriba (antes la regla de .app de más arriba lo dejaba como columna de 252px) */
 @media(max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.sidebar{position:static;height:auto;min-width:0}.nav{overflow-x:auto}}
 .lote-remove{display:block;margin-top:6px;font-size:11.5px;font-weight:800;color:var(--danger)}
+.lote-modal .modal-actions{flex-wrap:wrap}.lote-modal .modal-actions .btn{flex:1 1 auto}
+.quick-extras{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0}.quick-extra-chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:999px;padding:7px 12px;cursor:pointer;font-weight:800;font-size:13px;background:#fff}.quick-extra-chip input{width:20px;height:20px;min-height:0;margin:0}.quick-extra-chip:has(input:checked){background:var(--ok-soft);border-color:#a7f3d0;color:var(--ok)}
