@@ -5,8 +5,11 @@
 // No guarda nada: es un intermediario porque SUNAT no permite consultar directamente desde la página web.
 
 const SUNAT_URL = 'https://e-factura.sunat.gob.pe/v1/contribuyente/gre/comprobantes/descargaqr?hashqr=';
-const TIMEOUT_MS = 7000;   // SUNAT a veces se queda colgado: se corta y se reintenta.
-const ATTEMPTS = 3;
+// SUNAT deja sin respuesta una parte de las consultas (a veces 4 de cada 10). En vez de esperar cada intento,
+// se lanza un intento nuevo cada STAGGER_MS sin cortar los anteriores, y gana el primero que entrega el PDF.
+const STAGGER_MS = 2000;   // cada cuánto se lanza un intento adicional
+const MAX_ATTEMPTS = 6;    // intentos como máximo por guía
+const DEADLINE_MS = 18000; // tiempo total máximo por guía
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -18,26 +21,44 @@ function json(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } });
 }
 
-async function fetchPdf(hashqr) {
-  let lastError = 'SUNAT no respondió';
-  for (let i = 0; i < ATTEMPTS; i++) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    try {
-      const res = await fetch(SUNAT_URL + encodeURIComponent(hashqr), { signal: ctrl.signal });
-      const type = res.headers.get('content-type') || '';
-      if (res.ok && type.includes('pdf')) {
-        return { bytes: new Uint8Array(await res.arrayBuffer()), disposition: res.headers.get('content-disposition') || '' };
+function fetchPdf(hashqr) {
+  return new Promise((resolve, reject) => {
+    const controllers = [];
+    let finished = false, launched = 0, pending = 0, lastError = 'SUNAT no respondió a tiempo';
+    let stagger = null;
+    const finish = (err, value) => {
+      if (finished) return;
+      finished = true;
+      clearInterval(stagger); clearTimeout(deadline);
+      controllers.forEach((c) => { try { c.abort(); } catch (_e) { /* ya terminó */ } });
+      err ? reject(new Error(err)) : resolve(value);
+    };
+    const attempt = async () => {
+      if (finished || launched >= MAX_ATTEMPTS) return;
+      launched++; pending++;
+      const ctrl = new AbortController(); controllers.push(ctrl);
+      try {
+        // El parámetro "_" cambia en cada intento para que no se reutilice una respuesta trabada.
+        const res = await fetch(`${SUNAT_URL}${encodeURIComponent(hashqr)}&_=${Date.now()}${launched}`, { signal: ctrl.signal });
+        const type = res.headers.get('content-type') || '';
+        if (res.ok && type.includes('pdf')) {
+          const bytes = new Uint8Array(await res.arrayBuffer());
+          finish(null, { bytes, disposition: res.headers.get('content-disposition') || '' });
+          return;
+        }
+        lastError = `SUNAT respondió ${res.status}`;
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) { finish('QR no válido o guía no encontrada en SUNAT'); return; }
+      } catch (_e) {
+        // intento sin respuesta o cortado: lo cubren los demás
+      } finally {
+        pending--;
+        if (!finished && pending === 0 && launched >= MAX_ATTEMPTS) finish(lastError);
       }
-      lastError = `SUNAT respondió ${res.status}`;
-      if (res.status >= 400 && res.status < 500) break; // QR no válido: no tiene sentido reintentar
-    } catch (_e) {
-      lastError = 'SUNAT no respondió a tiempo';
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-  throw new Error(lastError);
+    };
+    const deadline = setTimeout(() => finish(lastError), DEADLINE_MS);
+    attempt();
+    stagger = setInterval(attempt, STAGGER_MS);
+  });
 }
 
 async function inflate(bytes) {

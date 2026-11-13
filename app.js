@@ -55,7 +55,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.19-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.20-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -75,7 +75,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.19-web';
+    copy.version='2.2.20-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -115,7 +115,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.19-web';
+      state.version='2.2.20-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -138,7 +138,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.19-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.20-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -340,7 +340,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.19-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.20-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -352,7 +352,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.19-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.20-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -1649,9 +1649,10 @@
   // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
   // y se abre una ventana por lote para marcar lo que llegó físicamente.
   const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
-  const APP_VERSION='2.2.19';
+  const APP_VERSION='2.2.20';
   let scanCloud={state:'idle',at:'',msg:''}; // estado de la ruma en Supabase, visible en pantalla
-  const SCAN_MAX_PARALLEL=3;
+  const SCAN_MAX_PARALLEL=2;   // consultas a la vez (no saturar a SUNAT)
+  const SCAN_AUTO_RETRIES=2;   // reintentos automáticos si SUNAT no responde
   const lsGet=(k,def)=>{ try{ const v=localStorage.getItem(k); return v?JSON.parse(v):def; }catch(e){ return def; } };
   // La ruma y los lotes tienen prioridad: si la memoria del navegador está llena, se libera la copia de la base y se reintenta.
   const lsSet=(k,v)=>{ const txt=JSON.stringify(v); try{ localStorage.setItem(k,txt); }catch(e){ try{ localStorage.removeItem(STORAGE_KEY); localStorage.setItem(k,txt); }catch(e2){ console.warn('No se pudo guardar en el navegador',k,e2); } } };
@@ -1694,7 +1695,7 @@
         l.done=done; l.discarded=discarded; });
     }
   }
-  function scanForRemote(){ const c=JSON.parse(JSON.stringify(scan)); c.items.forEach(i=>{ if(i.status==='wait') i.status='queued'; }); return c; }
+  function scanForRemote(){ const c=JSON.parse(JSON.stringify(scan)); c.items.forEach(i=>{ if(i.status==='wait'||i.status==='retrying') i.status='queued'; }); return c; }
   async function pullScan(fromPush=false){
     if(!db||!authUser) return;
     if(!fromPush && (scanPushing||scanPushTimer||document.hidden)) return;
@@ -1750,7 +1751,7 @@
     let local=lsGet(scanKey(),null);
     if(!local){ local=lsGet(SCAN_KEY,null); if(local){ try{ localStorage.removeItem(SCAN_KEY); }catch(e){} } } // ruma de la versión anterior
     scan=normScan(local);
-    scan.items.forEach(i=>{ if(i.status==='wait') i.status='queued'; });
+    scan.items.forEach(i=>{ if(i.status==='wait'||i.status==='retrying') i.status='queued'; });
     scanRemoteAt='';
     await pullScan(true);
     lsSet(scanKey(),scan);
@@ -1820,7 +1821,14 @@
       validateScanItem(item);
       if(item.status==='error') scanFeedback('error');
     }catch(err){
-      item.status='error'; item.error=err.message||'Error consultando SUNAT'; item.retry=true; scanFeedback('error');
+      const msg=err.message||'Error consultando SUNAT';
+      // SUNAT a veces no responde: se reintenta solo antes de marcar la guía en rojo.
+      if(/no respondi|respondió 5|429|Failed to fetch|network|non-2xx/i.test(msg) && (item.autoRetries||0)<SCAN_AUTO_RETRIES){
+        item.autoRetries=(item.autoRetries||0)+1; item.status='retrying'; item.error='';
+        setTimeout(()=>{ if(item.status==='retrying'){ item.status='queued'; saveScan(); pumpScanQueue(); renderScan(); } },3000);
+      }else{
+        item.status='error'; item.error=msg; item.retry=true; scanFeedback('error');
+      }
     }
     saveScan(); renderScan(); pumpScanQueue();
   }
@@ -1943,7 +1951,7 @@
   function renderScan(){
     const badge=$('#scanBadge'); if(badge) badge.textContent=scan.items.length;
     const list=$('#scanList'); if(!list) return;
-    const ok=scan.items.filter(i=>i.status==='ok').length, wait=scan.items.filter(i=>i.status==='wait'||i.status==='queued').length, err=scan.items.filter(i=>i.status==='error').length;
+    const ok=scan.items.filter(i=>i.status==='ok').length, wait=scan.items.filter(i=>['wait','queued','retrying'].includes(i.status)).length, err=scan.items.filter(i=>i.status==='error').length;
     $('#scanSummary').innerHTML=scan.items.length?`<span class="scan-chip">${scan.items.length} escaneadas</span><span class="scan-chip ok">${ok} listas</span>${wait?`<span class="scan-chip wait">${wait} consultando SUNAT…</span>`:''}${err?`<span class="scan-chip err">${err} con problema</span>`:''}`:'';
     const resume=$('#scanResume');
     markSavedLotes();
@@ -1957,7 +1965,7 @@
       const sunat=i.manual?'Agregada a mano':(i.motivo?`SUNAT: ${i.motivo}`:'');
       const grpN=r&&r.grt?groupFor(r).filter(x=>!x.liquidated).length:0;
       const grpTxt=grpN>1?` · GRT con ${grpN} GR: las demás se agregan solas al lote`:'';
-      const msg=i.status==='ok'?`✓ ${esc(r?.grt||'')} · ${esc(sunat)}${esc(grpTxt)}`:i.status==='error'?`✗ ${esc(i.error)}`:'Consultando SUNAT…';
+      const msg=i.status==='ok'?`✓ ${esc(r?.grt||'')} · ${esc(sunat)}${esc(grpTxt)}`:i.status==='error'?`✗ ${esc(i.error)}`:(i.autoRetries?`SUNAT está lento: reintentando (${i.autoRetries}/${SCAN_AUTO_RETRIES})…`:'Consultando SUNAT…');
       return `<div class="scan-item ${cls}"><div class="scan-num">${n+1}</div><div class="scan-main"><b>${esc(i.gr||'Guía leída')}</b><small>${esc(r?.recipient||i.destinatario||'')}${r?.district?' · '+esc(r.district):''}</small><div class="scan-msg">${msg}</div></div><div class="scan-side">${i.status==='error'&&i.retry?`<button class="btn small" data-scan-retry="${i.id}">Reintentar</button>`:''}<button class="btn small" data-scan-del="${i.id}" title="Quitar de la ruma">Quitar</button></div></div>`;
     }).reverse().join('');
     $$('[data-scan-del]',list).forEach(b=>b.onclick=()=>{ forgetScanItems([b.dataset.scanDel]); saveScan(); renderScan(); });
@@ -1979,7 +1987,7 @@
   }
   function finishRuma(){
     if((scan.lotes||[]).some(l=>!l.done)){ openNextLote(); return; }
-    const waiting=scan.items.filter(i=>i.status==='wait'||i.status==='queued');
+    const waiting=scan.items.filter(i=>i.status==='wait'||i.status==='queued'||i.status==='retrying');
     if(waiting.length){ toast(`Espera: ${waiting.length} guía(s) se están consultando en SUNAT`,true); return; }
     scan.items.forEach(i=>{ if(i.status==='ok') validateScanItem(i); }); // por si la base cambió mientras se escaneaba
     const ok=scan.items.filter(i=>i.status==='ok'), bad=scan.items.filter(i=>i.status!=='ok');
