@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Roche V2.2.18 Web · Tradel</title>
-  <link rel="stylesheet" href="styles.css?v=22180" />
+  <title>Roche V2.2.19 Web · Tradel</title>
+  <link rel="stylesheet" href="styles.css?v=22190" />
 </head>
 <body>
   <div id="loginView" class="screen login-screen">
@@ -48,6 +48,7 @@
       <div class="sidebar-footer">
         <div class="tiny muted">Usuario activo</div>
         <div id="activeUser" class="user-name"></div>
+        <div class="tiny muted">Versión 2.2.19</div>
         <button id="logoutBtn" class="link-btn">Cerrar sesión</button>
       </div>
     </aside>
@@ -102,6 +103,7 @@
             <input id="scanManual" autocomplete="off" placeholder="¿Un QR no se lee? Escribe la GR o sus últimos dígitos" />
             <button id="scanManualBtn" class="btn big">Agregar</button>
           </div>
+          <div class="scan-cloud-row"><div id="scanCloud" class="scan-cloud">☁ Ruma en la nube</div><button id="scanSyncBtn" class="btn big">☁ PASAR A LA LAPTOP / ACTUALIZAR</button></div>
           <div id="scanResume" class="hidden"></div>
           <div id="scanSummary" class="scan-summary"></div>
           <div id="scanList" class="scan-list"></div>
@@ -289,6 +291,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="jszip.min.js"></script>
   <script src="report_template_data.js"></script>
-  <script src="app.js?v=22180"></script>
+  <script src="app.js?v=22190"></script>
 </body>
 </html>
