@@ -321,3 +321,4 @@ body{background:var(--bg);color:var(--text)}
 @media(max-width:900px){.lote-head{grid-template-columns:1fr 1fr}.lote-row{grid-template-columns:auto 1fr}.lote-type,.lote-docs{grid-column:1/-1}.scan-bottom .btn.huge{width:100%}}
 /* Celular: el menú lateral pasa arriba (antes la regla de .app de más arriba lo dejaba como columna de 252px) */
 @media(max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.sidebar{position:static;height:auto;min-width:0}.nav{overflow-x:auto}}
+.lote-remove{display:block;margin-top:6px;font-size:11.5px;font-weight:800;color:var(--danger)}
