@@ -55,7 +55,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.22-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.23-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -75,7 +75,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.22-web';
+    copy.version='2.2.23-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -115,7 +115,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.22-web';
+      state.version='2.2.23-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -138,7 +138,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.22-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.23-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -199,7 +199,7 @@
     if(!any) return 'Pendiente';
     if(!r.type) return 'Parcial';
     let complete=false;
-    if(SIMPLE_TYPES.includes(r.type)) complete=grt && d.gr>=1;
+    if(SIMPLE_TYPES.includes(r.type)) complete=d.gr>=1; // V2.2.23: la GRT ya no es obligatoria para tipos simples
     if(r.type==='Venta'){
       const factResolved = r.facturaState==='Recibido' || r.facturaState==='No aplica';
       const ocResolved = r.ocState==='Recibido' || r.ocState==='No aplica';
@@ -284,7 +284,7 @@
   function missingDocsText(r){
     const d=sumDocs(r,false), miss=[];
     if(!r.type) return 'Definir tipo de guía';
-    if(!isGRTReceived(r)) miss.push('GRT');
+    if(!isGRTReceived(r) && !SIMPLE_TYPES.includes(r.type)) miss.push('GRT');
     if(SIMPLE_TYPES.includes(r.type)){
       if(d.gr<1) miss.push('GR');
     }else if(r.type==='Venta'){
@@ -340,7 +340,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.22-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.23-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -352,7 +352,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.22-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.23-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -494,14 +494,14 @@
     const grtAlready=isGRTReceived(r);
     const extra=`<div class="extra-docs">${quickExtrasHtml()}<div class="extra-row"><input class="extraInput" placeholder="Documento adicional (ej. Plantilla, Carta, Regularización...)"/><button type="button" class="btn addExtra">Agregar</button></div><div class="extraTags"></div></div>`;
     if(SIMPLE_TYPES.includes(type)) return `
-      <div class="doc-checks large-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':''}><span>GRT</span><small>${grtAlready?'Ya recibida para esta GRT':'Marcar si llegó físicamente'}</small></label><label class="check-card"><input id="docGR" type="checkbox"><span>GR</span><small>Guía física recibida</small></label></div>
+      <div class="doc-checks large-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':(mode==='add'?'':'checked')}><span>GRT</span><small>${grtAlready?'Ya recibida para esta GRT':'Marcar si llegó físicamente'}</small></label><label class="check-card"><input id="docGR" type="checkbox"><span>GR</span><small>Guía física recibida</small></label></div>
       <button type="button" class="btn primary mark-both" id="markBoth">MARCAR AMBOS · GRT + GR</button>${extra}`;
     if(type==='Venta') return `
-      <div class="doc-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':''}><span>GRT</span><small>${grtAlready?'Ya recibida':'Marcar si llegó'}</small></label><label class="check-card"><input id="docGR" type="checkbox"><span>GR</span><small>Guía recibida</small></label></div>
+      <div class="doc-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':(mode==='add'?'':'checked')}><span>GRT</span><small>${grtAlready?'Ya recibida':'Marcar si llegó'}</small></label><label class="check-card"><input id="docGR" type="checkbox"><span>GR</span><small>Guía recibida</small></label></div>
       <button type="button" class="btn primary mark-both" id="markBoth">MARCAR AMBOS · GRT + GR</button>
       <div class="state-grid"><div class="field state-field"><label>Factura</label><small>Estado acumulado: <b>${esc(r.facturaState||'Sin definir')}</b></small><select id="factState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div><div class="field state-field"><label>OC</label><small>Estado acumulado: <b>${esc(r.ocState||'Sin definir')}</b></small><select id="ocState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div></div>${extra}`;
     if(type==='Venta CENARES') return `
-      <div class="doc-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':''}><span>GRT</span><small>${grtAlready?'Ya recibida':'Marcar si llegó'}</small></label></div>
+      <div class="doc-checks"><label class="check-card ${grtAlready?'already':''}"><input id="docGRT" type="checkbox" ${grtAlready?'disabled':(mode==='add'?'':'checked')}><span>GRT</span><small>${grtAlready?'Ya recibida':'Marcar si llegó'}</small></label></div>
       <div class="cenares-grid"><div class="count-box"><span>GR esperadas</span><b>4</b><label>Recibidas <input id="cntGR" type="number" min="0" max="4" value="0"></label></div><div class="count-box"><span>Actas esperadas</span><b>4</b><label>Recibidas <input id="cntActas" type="number" min="0" max="4" value="0"></label></div><div class="count-box"><span>Pecosas esperadas</span><b>4</b><label>Recibidas <input id="cntPecosas" type="number" min="0" max="4" value="0"></label></div></div>
       <div class="state-grid"><div class="field state-field"><label>Factura</label><small>Estado acumulado: <b>${esc(r.facturaState||'Sin definir')}</b></small><select id="factState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div><div class="field state-field"><label>OC</label><small>Estado acumulado: <b>${esc(r.ocState||'Sin definir')}</b></small><select id="ocState"><option value="">Sin cambios (No aplica si aún no se ha definido)</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></div></div>${extra}`;
     return extra;
@@ -527,7 +527,7 @@
   function openPackageRegistration(base){
     const group=groupFor(base).sort((a,b)=>a.gr.localeCompare(b.gr));
     const recipient=base.recipient, address=base.address;
-    const html=`<div class="package-head"><div><span>GRT</span><strong>${esc(base.grt)}</strong></div><div><span>Destinatario</span><strong>${esc(recipient)}</strong></div><div class="wide"><span>Dirección</span><strong>${esc(address||'—')}</strong></div><label class="shared-grt"><input id="pkgGRT" type="checkbox" ${isGRTReceived(base)?'disabled checked':''}><b>GRT RECIBIDA</b><small>${isGRTReceived(base)?'Ya registrada anteriormente':'Se marca una sola vez para todo el paquete'}</small></label></div>
+    const html=`<div class="package-head"><div><span>GRT</span><strong>${esc(base.grt)}</strong></div><div><span>Destinatario</span><strong>${esc(recipient)}</strong></div><div class="wide"><span>Dirección</span><strong>${esc(address||'—')}</strong></div><label class="shared-grt"><input id="pkgGRT" type="checkbox" ${isGRTReceived(base)?'disabled checked':'checked'}><b>GRT RECIBIDA</b><small>${isGRTReceived(base)?'Ya registrada anteriormente':'Se marca una sola vez para todo el paquete'}</small></label></div>
       <div class="bulk-box"><div class="section-label">Asignar tipo en grupo</div><p class="muted">Selecciona las filas de la primera columna y luego toca un tipo.</p>${typeButtons('')}</div>
       <div class="package-table-wrap"><table class="package-table"><thead><tr><th><input id="pkgSelectAll" type="checkbox"></th><th>GR cliente</th><th>Pedido</th><th>Tipo</th><th>GR recibida</th><th>Documentos de esta recepción</th></tr></thead><tbody>${group.map(r=>`<tr data-pkg-row="${r.id}"><td><input class="pkgSelect" type="checkbox"></td><td><b>${esc(r.gr)}</b></td><td>${esc(r.order||'—')}</td><td class="pkgType">${r.type?`<span class="type-pill">${esc(r.type)}</span>`:'<span class="muted">Sin asignar</span>'}</td><td class="center"><input class="pkgArrived big-checkbox" type="checkbox"></td><td class="pkgDocs">${packageMiniDocs(r,r.type)}</td></tr>`).join('')}</tbody></table></div>
       <div class="modal-actions"><button class="btn" id="cancelPkg">Cancelar</button><button class="btn primary big" id="savePkg">GUARDAR PAQUETE</button></div>`;
@@ -1649,7 +1649,7 @@
   // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
   // y se abre una ventana por lote para marcar lo que llegó físicamente.
   const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
-  const APP_VERSION='2.2.22';
+  const APP_VERSION='2.2.23';
   let scanCloud={state:'idle',at:'',msg:''}; // estado de la ruma en Supabase, visible en pantalla
   const SCAN_MAX_PARALLEL=2;   // consultas a la vez (no saturar a SUNAT)
   const SCAN_AUTO_RETRIES=2;   // reintentos automáticos si SUNAT no responde
@@ -2010,20 +2010,26 @@
   }
   // Factura: por defecto "Pendiente" (la venta queda Parcial hasta que llegue o se marque "No aplica").
   // OC: por defecto "No aplica" (casi nunca se pide), salvo que la guía ya tenga otro estado.
-  function loteStateSeg(field,label,current,def){
-    if(current==='Recibido') return `<div class="lr-seg done" data-field="${field}" data-value=""><span class="lr-seg-label">${label}</span><span class="lr-seg-done">✓ ya recibida antes</span></div>`;
-    const v=current||def;
+  function loteStateSeg(field,label,current,def,chosen){
+    if(current==='Recibido' && !chosen) return `<div class="lr-seg done" data-field="${field}" data-value=""><span class="lr-seg-label">${label}</span><span class="lr-seg-done">✓ ya recibida antes</span></div>`;
+    const v=chosen||current||def;
     return `<div class="lr-seg" data-field="${field}" data-value="${esc(v)}"><span class="lr-seg-label">${label}</span>${['Recibido','Pendiente','No aplica'].map(x=>`<button type="button" class="lr-seg-btn ${x===v?'selected':''} ${x==='Recibido'?'ok':x==='Pendiente'?'wait':'na'}" data-v="${x}">${x==='Recibido'?'Llegó':x}</button>`).join('')}</div>`;
   }
-  function loteDocsHtml(r,type){
+  // pre: lo guardado antes en este lote (solo al revisar un lote ya guardado)
+  function loteDocsHtml(r,type,pre){
     if(!type) return `<div class="lr-hint">Elige el tipo arriba para ver qué marcar.</div>`;
-    const acc=packageAccumulatedReference(r);
+    const acc=pre?'':packageAccumulatedReference(r);
     const chips=[];
-    QUICK_EXTRAS.forEach(x=>chips.push(`<label class="lr-chip"><input type="checkbox" class="quick-extra" data-value="${esc(x)}"><span>${esc(x)}</span></label>`));
-    const cen=type==='Venta CENARES'?(()=>{ const d=sumDocs(r,false); return `<div class="lr-steps">${loteStepper('pkgCntGR','GR',d.grCopies)}${loteStepper('pkgCntAct','Actas',d.actas)}${loteStepper('pkgCntPec','Pecosas',d.pecosas)}</div>`; })():'';
-    const segs=(type==='Venta'||type==='Venta CENARES')?`<div class="lr-segs">${loteStateSeg('fact','Factura',r.facturaState,'Pendiente')}${loteStateSeg('oc','OC',r.ocState,'No aplica')}</div>`:'';
+    const extras=pre?.extras||[];
+    QUICK_EXTRAS.forEach(x=>chips.push(`<label class="lr-chip"><input type="checkbox" class="quick-extra" data-value="${esc(x)}" ${extras.includes(x)?'checked':''}><span>${esc(x)}</span></label>`));
+    const cen=type==='Venta CENARES'?(()=>{ const d=sumDocs(r,false), c=pre?.counts||{gr:0,act:0,pec:0};
+      const step=(cls,label,have,val)=>loteStepper(cls,label,Math.max(0,have-val)).replace('value="0"',`value="${val}"`);
+      return `<div class="lr-steps">${step('pkgCntGR','GR',d.grCopies,c.gr||0)}${step('pkgCntAct','Actas',d.actas,c.act||0)}${step('pkgCntPec','Pecosas',d.pecosas,c.pec||0)}</div>`; })():'';
+    const curF=pre?pre.prevFact:r.facturaState, curO=pre?pre.prevOC:r.ocState;
+    const segs=(type==='Venta'||type==='Venta CENARES')?`<div class="lr-segs">${loteStateSeg('fact','Factura',curF,'Pendiente',pre?.fs||'')}${loteStateSeg('oc','OC',curO,'No aplica',pre?.os||'')}</div>`:'';
+    const otherExtras=extras.filter(x=>!QUICK_EXTRAS.includes(x));
     return `${acc}${cen}${segs}<div class="lr-chips">${chips.join('')}<button type="button" class="link-btn lr-more">+ otro documento</button></div>
-      <div class="mini-extra hidden"><input class="pkgExtraInput" placeholder="Ej. Carta, Acta de conformidad…"><button type="button" class="btn tiny-btn pkgAddExtra">Agregar</button><span class="pkgExtraTags"></span></div>`;
+      <div class="mini-extra ${otherExtras.length?'':'hidden'}"><input class="pkgExtraInput" placeholder="Ej. Carta, Acta de conformidad…"><button type="button" class="btn tiny-btn pkgAddExtra">Agregar</button><span class="pkgExtraTags">${otherExtras.map(x=>`<span class="extra-tag small" data-value="${esc(x)}">${esc(x)} <button type="button" onclick="this.parentNode.remove()">×</button></span>`).join('')}</span></div>`;
   }
   function loteTypeChips(selected){
     return `<div class="lr-types">${TYPES.map(t=>`<button type="button" class="lr-type ${t===selected?'selected':''}" data-set-type="${esc(t)}">${esc(TYPE_SHORT[t]||t)}</button>`).join('')}</div>`;
@@ -2061,29 +2067,40 @@
     const others=lote.grt?groupFor(base).filter(r=>!scannedIds.has(r.id) && !r.liquidated).sort((a,b)=>String(a.gr).localeCompare(String(b.gr))):[];
     const rows=[...lote.items.map(i=>({r:getRecord(i.recordId),info:i,scanned:true})).filter(x=>x.r), ...others.map(r=>({r,info:{},scanned:false}))];
     const doneCount=lotes.filter(l=>l.done).length;
-    const grtDone=lote.grt && isGRTReceived(base);
+    // Revisión: el lote ya se guardó (o descartó); se muestra lo que se marcó y no se cambia nada salvo que se guarde una corrección.
+    const review=!!lote.done;
+    const pre=new Map((review&&!lote.discarded?(lote.undo||[]):[]).map(u=>[u.recordId,u]));
+    const sentLock=review && [...pre.values()].some(u=>{ const r=getRecord(u.recordId); return (r?.receipts||[]).some(m=>m.id===u.receiptId && m.sentReportId); });
+    const legacyLock=review && !lote.discarded && !pre.size; // guardado con una versión anterior: no se sabe qué registró, solo se puede ver
+    const lockMsg=sentLock?'Este lote ya se incluyó en un reporte a Roche: solo se puede ver.':legacyLock?'Este lote se guardó con una versión anterior y no se puede corregir desde aquí: usa “Anular recepción” en el detalle de la guía.':'';
+    const grtBefore=lote.grt && isGRTReceived(base) && !(review && lote.grtNew); // ya estaba recibida antes de este lote
+    const grtChecked=review?(grtBefore||!!lote.grtNew):true;
+    const grtDone=grtBefore;
     const separated=lote.items.filter(i=>i.separated).map(i=>i.gr);
-    // Lote anterior = el último que se terminó (guardado o descartado) antes de este.
-    const prevLote=lotes.filter(l=>l.done && l.id!==lote.id && l.doneAt).sort((a,b)=>String(b.doneAt).localeCompare(String(a.doneAt)))[0]||null;
+    // Lote anterior = el último terminado antes de este (por orden de guardado).
+    const prevLote=lotes.filter(l=>l.done && l.id!==lote.id && l.doneAt && (!review||!lote.doneAt||String(l.doneAt)<String(lote.doneAt))).sort((a,b)=>String(b.doneAt).localeCompare(String(a.doneAt)))[0]||null;
     const rowHtml=({r,info,scanned})=>{
-      const t=scanned?scanSuggestedType(info,r):(r.type||'');
-      const fromSunat=scanned && !r.type && !!t; // Venta / Venta CENARES detectadas por SUNAT
+      const p=pre.get(r.id);
+      const t=review?(p?.type||(lote.discarded?scanSuggestedType(info,r):'')):(scanned?scanSuggestedType(info,r):(r.type||''));
+      const fromSunat=!review && scanned && !r.type && !!t; // Venta / Venta CENARES detectadas por SUNAT
+      const isOn=review?(lote.discarded?scanned:!!p):scanned;
       const sub=[`Pedido ${esc(r.order||'—')}`, esc(r.result||''), scanned?(info.motivo?`SUNAT: ${esc(info.motivo)}`:(info.manual?'Agregada a mano':'')):'No escaneada'].filter(Boolean).join(' · ');
-      return `<div class="lr ${scanned?'on':''}" data-lote-row="${r.id}" data-type="${esc(t)}" data-src="${fromSunat?'sunat':''}">
+      return `<div class="lr ${isOn?'on':''}" data-lote-row="${r.id}" data-type="${esc(t)}" data-src="${fromSunat?'sunat':''}">
         <button type="button" class="lr-check" title="Llegó / no llegó"><span class="lr-box">✓</span><span class="lr-check-txt">LLEGÓ</span></button>
         <div class="lr-main">
           <div class="lr-top"><b>${esc(r.gr)}</b>${info.separated?'<span class="lote-tag">Estaba separada</span>':''}<button type="button" class="lr-x" title="Quitar del lote">✕</button></div>
           <div class="lr-sub">${sub}</div>
           <div class="lr-type-pick">${loteTypeChips(t)}</div>
-          <div class="lr-docs lote-docs">${loteDocsHtml(r,t)}</div>
+          <div class="lr-docs lote-docs">${loteDocsHtml(r,t,p)}</div>
         </div>
       </div>`;
     };
     const html=`<div class="lote-progress"><span style="width:${Math.round(doneCount/lotes.length*100)}%"></span></div>
       <div class="lr-head">
         <div class="lr-head-info"><div class="lr-grt">${esc(lote.grt||'Sin GRT')}</div><div class="lr-dest">${esc(base.recipient||'—')}</div><div class="lr-addr">${esc(base.address||'')}</div></div>
-        <label class="lr-grt-toggle ${grtDone?'done':''}"><input id="loteGRT" type="checkbox" ${grtDone?'disabled checked':'checked'} ${lote.grt?'':'disabled'}><span><b>GRT RECIBIDA</b><small>${grtDone?'Ya registrada antes':lote.grt?'Desmarca si NO llegó la guía de Tradel':'Sin GRT'}</small></span></label>
+        <label class="lr-grt-toggle ${grtDone?'done':''}"><input id="loteGRT" type="checkbox" ${grtDone?'disabled checked':(grtChecked?'checked':'')} ${lote.grt?'':'disabled'}><span><b>GRT RECIBIDA</b><small>${grtDone?'Ya registrada antes':lote.grt?'Desmarca si NO llegó la guía de Tradel':'Sin GRT'}</small></span></label>
       </div>
+      ${review?`<div class="lr-review-note">${lote.discarded?'Estás viendo un lote que se <b>descartó</b>. Si quieres registrarlo, marca lo que llegó y toca <b>Guardar</b>.':'Estás <b>revisando un lote ya guardado</b>: así quedó registrado. Si todo está bien, toca <b>Volver sin cambios</b>. Si te equivocaste, corrige y toca <b>Guardar corrección</b> (reemplaza lo registrado en este lote).'}${lockMsg?`<br><b>${lockMsg}</b>`:''}</div>`:''}
       ${separated.length?`<div class="alert-box">Estaban <b>separadas de su grupo</b> en la ruma; júntalas con este lote: <b>${separated.map(esc).join(', ')}</b></div>`:''}
       <div class="lr-section"><div class="section-label">1. ¿Qué guías llegaron?</div>
         ${rows.length>1?`<div class="lr-bulk"><button type="button" class="btn" id="loteAllArrived">✓ Llegaron todas</button><button type="button" class="btn" id="loteNoneArrived">Ninguna</button>${others.length?`<span class="muted small">${others.length} de esta GRT no se escanearon: márcalas solo si llegaron.</span>`:''}</div>`:''}
@@ -2093,8 +2110,9 @@
         <div class="muted small">Opcional. Pone ese tipo a todas las marcadas como “llegó”, menos las ventas que ya detectó SUNAT. Si son de tipos distintos (ej. 1 suministro y 2 ventas), elige el tipo en cada guía abajo.</div>
       </div>
       <div class="lr-section"><div class="section-label">3. Tipo y documentos de cada guía</div><div class="lr-list">${rows.map(rowHtml).join('')}</div></div>
-      <div class="modal-actions lr-actions"><div class="lr-actions-left">${prevLote?`<button class="btn small" id="lotePrev">← Lote anterior</button>`:''}<button class="btn small" id="loteClose">Continuar después</button><button class="btn small" id="loteSkip">Saltar</button><button class="btn small danger-outline" id="loteDiscard">Descartar lote</button></div><button class="btn primary huge" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
-    openModal(`Lote ${doneCount+1} de ${lotes.length}`, 'Marca lo que llegó, elige el tipo y guarda.', html, 'lote-modal');
+      <div class="modal-actions lr-actions"><div class="lr-actions-left">${prevLote?`<button class="btn small" id="lotePrev">← Lote anterior</button>`:''}${review?`<button class="btn" id="loteBackNext">Volver sin cambios →</button>`:`<button class="btn small" id="loteClose">Continuar después</button><button class="btn small" id="loteSkip">Saltar</button><button class="btn small danger-outline" id="loteDiscard">Descartar lote</button>`}</div><button class="btn primary huge" id="loteSave" ${lockMsg?'data-readonly="1" disabled':''}>${review?(lote.discarded?'GUARDAR':'GUARDAR CORRECCIÓN'):(lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR')}</button></div>`;
+    const pos=lotes.indexOf(lote)+1;
+    openModal(review?`Revisando lote ${pos} de ${lotes.length}`:`Lote ${doneCount+1} de ${lotes.length}`, review?'Lote ya guardado: revisa lo que marcaste.':'Marca lo que llegó, elige el tipo y guarda.', html, 'lote-modal'+(review?' lote-review':''));
     const body=$('#modalBody');
     const wireDocs=row=>{
       const docs=$('.lr-docs',row);
@@ -2106,7 +2124,7 @@
     const setRowType=(row,t)=>{
       const r=getRecord(row.dataset.loteRow); row.dataset.type=t;
       $$('.lr-type',row).forEach(b=>b.classList.toggle('selected',b.dataset.setType===t));
-      $('.lr-docs',row).innerHTML=loteDocsHtml(r,t); wireDocs(row);
+      $('.lr-docs',row).innerHTML=loteDocsHtml(r,t,t===(pre.get(r.id)?.type)?pre.get(r.id):null); wireDocs(row);
     };
     const updateBulkBox=()=>{ const need=$$('[data-lote-row]',body).some(row=>row.dataset.src!=='sunat'); $('#loteBulkTypeBox').classList.toggle('hidden',!need); };
     $$('[data-lote-row]',body).forEach(row=>{
@@ -2131,32 +2149,24 @@
     const setAll=v=>$$('[data-lote-row]',body).forEach(row=>row.classList.toggle('on',v));
     $('#loteAllArrived')?.addEventListener('click',()=>setAll(true));
     $('#loteNoneArrived')?.addEventListener('click',()=>setAll(false));
-    $('#loteClose').onclick=()=>{ closeModal(); renderScan(); };
-    $('#lotePrev')?.addEventListener('click',()=>reopenLote(prevLote.id));
-    $('#loteSkip').onclick=()=>{ lote.skipped=true; bumpLote(lote); saveScan(); closeModal(); openNextLote(); };
-    $('#loteDiscard').onclick=()=>{ if(!confirm('¿Descartar este lote? Ninguna de sus guías se registrará.')) return; lote.done=true; lote.discarded=true; lote.doneAt=nowIso(); bumpLote(lote); saveScan(); closeModal(); toast('Lote descartado'); openNextLote(); };
+    $('#loteClose')?.addEventListener('click',()=>{ closeModal(); renderScan(); });
+    $('#lotePrev')?.addEventListener('click',()=>{ closeModal(); openLote(prevLote.id); }); // solo abre para revisar; no cambia nada
+    $('#loteBackNext')?.addEventListener('click',()=>{ closeModal(); openNextLote(); });
+    if(!review) $('#loteSkip').onclick=()=>{ lote.skipped=true; bumpLote(lote); saveScan(); closeModal(); openNextLote(); };
+    if(!review) $('#loteDiscard').onclick=()=>{ if(!confirm('¿Descartar este lote? Ninguna de sus guías se registrará.')) return; lote.done=true; lote.discarded=true; lote.doneAt=nowIso(); bumpLote(lote); saveScan(); closeModal(); toast('Lote descartado'); openNextLote(); };
     $('#loteSave').onclick=()=>saveLote(lote.id);
   }
-  // Vuelve a abrir un lote ya terminado para corregirlo: anula lo que ese lote registró y restaura cómo estaban las guías.
-  function reopenLote(loteId){
-    const lote=(scan.lotes||[]).find(l=>l.id===loteId); if(!lote) return;
-    const regs=(lote.undo||[]).filter(u=>u.receiptId);
-    if(!lote.discarded && regs.length){
-      const sent=regs.some(u=>{ const r=getRecord(u.recordId); return (r?.receipts||[]).some(m=>m.id===u.receiptId && m.sentReportId); });
-      if(sent){ toast('Ese lote ya se incluyó en un reporte a Roche; corrígelo desde el detalle de la guía.',true); return; }
-      if(!confirm(`Volver al lote ${lote.grt||''}: se anulará lo que registraste en él (${regs.length} GR) para que lo llenes de nuevo. ¿Continuar?`)) return;
-      regs.forEach(u=>{
-        const r=getRecord(u.recordId); if(!r) return;
-        const m=(r.receipts||[]).find(x=>x.id===u.receiptId); if(m){ m.annulled=true; m.annulledAt=nowIso(); m.annulledBy=state.currentUser; m.annulReason='Corrección desde Escanear ruma (lote anterior)'; }
-        r.type=u.prevType; r.facturaState=u.prevFact; r.ocState=u.prevOC;
-        r.audit=r.audit||[]; r.audit.push({at:nowIso(),user:state.currentUser,action:'Anulación por corrección de lote',detail:'Se reabrió el lote para corregirlo'});
-        recalc(r);
-      });
-      if(lote.grtNew && lote.grt){ const g=state.grtLedger?.[lote.grt]; if(g && !g.sentReportId){ delete state.grtLedger[lote.grt]; if(state.grtReceived) delete state.grtReceived[lote.grt]; } }
-      saveState(); audit('Lote reabierto para corregir',`${lote.grt||'(sin GRT)'}: ${regs.length} GR anuladas`);
-    }
-    lote.done=false; lote.discarded=false; lote.skipped=false; lote.undo=[]; lote.grtNew=false; lote.reopenedAt=nowIso(); delete lote.doneAt; bumpLote(lote); saveScan();
-    closeModal(); renderAll(); openLote(lote.id);
+  // Al guardar una corrección: anula las recepciones que ese lote registró y deja las guías como estaban antes.
+  function revertLote(lote){
+    (lote.undo||[]).filter(u=>u.receiptId).forEach(u=>{
+      const r=getRecord(u.recordId); if(!r) return;
+      const m=(r.receipts||[]).find(x=>x.id===u.receiptId); if(m && !m.sentReportId){ m.annulled=true; m.annulledAt=nowIso(); m.annulledBy=state.currentUser; m.annulReason='Corrección del lote (Escanear ruma)'; }
+      r.type=u.prevType; r.facturaState=u.prevFact; r.ocState=u.prevOC;
+      r.audit=r.audit||[]; r.audit.push({at:nowIso(),user:state.currentUser,action:'Corrección de lote',detail:'Se reemplazó lo registrado en el lote'});
+      recalc(r);
+    });
+    if(lote.grtNew && lote.grt){ const g=state.grtLedger?.[lote.grt]; if(g && !g.sentReportId){ delete state.grtLedger[lote.grt]; if(state.grtReceived) delete state.grtReceived[lote.grt]; } }
+    lote.undo=[]; lote.grtNew=false;
   }
   async function saveLote(loteId){
     const findLote=()=>(scan.lotes||[]).find(l=>l.id===loteId);
@@ -2166,6 +2176,7 @@
     let rows=$$('[data-lote-row]',body).map(row=>({row,id:row.dataset.loteRow,r:getRecord(row.dataset.loteRow),arrived:row.classList.contains('on'),type:row.dataset.type||'',docs:$('.lote-docs',row)}));
     let arrived=rows.filter(x=>x.arrived);
     const grtChk=$('#loteGRT'), grtNew=!!(lote.grt && grtChk && grtChk.checked && !grtChk.disabled);
+    if(saveBtn.dataset.readonly){ toast('Este lote ya fue incluido en un reporte a Roche; corrígelo desde el detalle de la guía.',true); return; }
     const noType=arrived.find(x=>!x.type);
     if(noType){ toast(`Falta el tipo de la GR ${noType.r.gr}`,true); noType.row.scrollIntoView({block:'center',behavior:'smooth'}); noType.row.classList.add('lr-warn'); setTimeout(()=>noType.row.classList.remove('lr-warn'),1600); return; }
     if(!arrived.length && !grtNew && !confirm('No marcaste nada como recibido en este lote. ¿Pasar al siguiente sin registrar?')) return;
@@ -2174,7 +2185,10 @@
     await refreshRemoteIfNewer(true);
     rows.forEach(x=>{ x.r=getRecord(x.id); });
     rows=rows.filter(x=>x.r); arrived=rows.filter(x=>x.arrived);
-    if(grtNew) setGRTReceived(lote.grt);
+    const reviewing=!!lote.done;
+    if(reviewing) revertLote(lote); // corrección: se anula lo anterior de este lote y se registra lo nuevo
+    const grtNow=!!(lote.grt && grtChk && grtChk.checked && !(lote.grt && isGRTReceived({grt:lote.grt})));
+    if(grtNow) setGRTReceived(lote.grt);
     const clamp=v=>Math.max(0,Math.min(4,Number(v||0)));
     const undo=[]; // para "Lote anterior": qué se registró y cómo estaba antes
     arrived.forEach(({r,type,docs:area})=>{
@@ -2191,16 +2205,16 @@
       }else{ if(!r.facturaState) r.facturaState='No aplica'; if(!r.ocState) r.ocState='No aplica'; }
       $$('.extra-tag',area).forEach(x=>docs.extras.push(x.dataset.value)); readQuickExtras(area,docs);
       r.receipts=r.receipts||[]; r.audit=r.audit||[];
-      const recId=uid('rec'); undo[undo.length-1].receiptId=recId;
+      const recId=uid('rec'); Object.assign(undo[undo.length-1],{receiptId:recId,type,fs,os,counts:{gr:docs.grCopies,act:docs.actas,pec:docs.pecosas},extras:[...docs.extras]});
       r.receipts.push({id:recId,at:nowIso(),user:state.currentUser,docs,sentReportId:null,facturaStateChange:fs||'',ocStateChange:os||'',annulled:false});
       r.audit.push({at:nowIso(),user:state.currentUser,action:'Registro por escaneo de ruma',detail:docsTextFromRaw(docs)});
       recalc(r);
     });
     rows.filter(x=>!x.arrived).forEach(x=>recalc(x.r));
-    lote=findLote()||lote; lote.done=true; lote.discarded=false; lote.undo=undo; lote.grtNew=grtNew; lote.doneAt=nowIso(); bumpLote(lote); saveScan();
-    saveState(); audit('Registro de lote escaneado',`${lote.grt||'(sin GRT)'}: ${arrived.length} GR`);
+    lote=findLote()||lote; lote.done=true; lote.discarded=false; lote.undo=undo; lote.grtNew=grtNow; lote.doneAt=lote.doneAt||nowIso(); bumpLote(lote); saveScan();
+    saveState(); audit(reviewing?'Corrección de lote escaneado':'Registro de lote escaneado',`${lote.grt||'(sin GRT)'}: ${arrived.length} GR`);
     closeModal(); renderAll();
-    toast(`Lote guardado: ${arrived.length} GR${grtNew?' + GRT':''}`);
+    toast(reviewing?`Corrección guardada: ${arrived.length} GR`:`Lote guardado: ${arrived.length} GR${grtNow?' + GRT':''}`);
     openNextLote(); // pasa directo al siguiente; la subida a Supabase sigue en segundo plano
   }
 
