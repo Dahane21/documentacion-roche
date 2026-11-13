@@ -55,7 +55,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.20-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.21-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -75,7 +75,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.20-web';
+    copy.version='2.2.21-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -115,7 +115,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.20-web';
+      state.version='2.2.21-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -138,7 +138,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.20-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.21-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -340,7 +340,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.20-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.21-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -352,7 +352,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.20-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.21-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -1649,7 +1649,7 @@
   // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
   // y se abre una ventana por lote para marcar lo que llegó físicamente.
   const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
-  const APP_VERSION='2.2.20';
+  const APP_VERSION='2.2.21';
   let scanCloud={state:'idle',at:'',msg:''}; // estado de la ruma en Supabase, visible en pantalla
   const SCAN_MAX_PARALLEL=2;   // consultas a la vez (no saturar a SUNAT)
   const SCAN_AUTO_RETRIES=2;   // reintentos automáticos si SUNAT no responde
@@ -2000,24 +2000,26 @@
   }
 
   // ---- Ventana por lote ----
-  function scanTypeOptions(selected){
-    return `<option value="">— Elegir tipo —</option>${TYPES.map(t=>`<option ${t===selected?'selected':''}>${esc(t)}</option>`).join('')}`;
-  }
-  function stateSelect(cls,label){
-    return `<label>${label} <select class="${cls}"><option value="">—</option><option>Recibido</option><option>Pendiente</option><option>No aplica</option></select></label>`;
+  // ---- Ventana de lote (diseño simple, V2.2.21) ----
+  // 1) ¿Qué llegó? → casilla grande por guía.  2) Tipo → botones grandes para todo el lote (o por guía).
+  // 3) Debajo de cada guía aparece solo lo que su tipo necesita (factura, contadores CENARES, plantilla).
+  const TYPE_SHORT={'Suministro':'Suministro','Instalación':'Instalación','Mantenimiento':'Mantenim.','Devolución':'Devolución','Otros':'Otros','Venta':'Venta','Venta CENARES':'CENARES'};
+  function loteChip(cls,label,checked=false){ return `<label class="lr-chip"><input type="checkbox" class="${cls}" ${checked?'checked':''}><span>${esc(label)}</span></label>`; }
+  function loteStepper(cls,label,have){
+    return `<div class="lr-step"><span class="lr-step-label">${label}${have?` <small>(ya ${have})</small>`:''}</span><button type="button" class="st-btn" data-step="-1">−</button><input class="${cls}" type="number" min="0" max="4" inputmode="numeric" value="0"><button type="button" class="st-btn" data-step="1">+</button><small class="lr-step-of">de 4</small></div>`;
   }
   function loteDocsHtml(r,type){
+    if(!type) return `<div class="lr-hint">Elige el tipo arriba para ver qué marcar.</div>`;
     const acc=packageAccumulatedReference(r);
-    if(!type) return `${acc}<span class="muted">Elige el tipo para ver qué marcar.</span>`;
-    const extra=`${quickExtrasHtml()}<div class="mini-extra"><input class="pkgExtraInput" placeholder="Adicional (ej. Plantilla)"><button type="button" class="btn tiny-btn pkgAddExtra">Agregar</button><span class="pkgExtraTags"></span></div>`;
-    if(SIMPLE_TYPES.includes(type)) return `${acc}<div class="mini-doc-note">Se registra la GR si está marcada como “llegó”.</div>${extra}`;
-    if(type==='Venta') return `${acc}<div class="mini-states">${stateSelect('pkgFact','Factura')}${stateSelect('pkgOC','OC')}</div>${extra}`;
-    if(type==='Venta CENARES'){
-      const d=sumDocs(r,false);
-      const cnt=(cls,label,have)=>`<label class="lote-count">${label} <input class="${cls}" type="number" min="0" max="4" inputmode="numeric" value="0"><span class="mini-expected">llegaron · esperadas 4${have?` (ya ${have})`:''}</span></label>`;
-      return `${acc}<div class="mini-counts">${cnt('pkgCntGR','GR',d.grCopies)}${cnt('pkgCntAct','Actas',d.actas)}${cnt('pkgCntPec','Pecosas',d.pecosas)}</div><div class="mini-states">${stateSelect('pkgFact','Factura')}${stateSelect('pkgOC','OC')}</div>${extra}`;
-    }
-    return `${acc}${extra}`;
+    const chips=[];
+    if(type==='Venta'||type==='Venta CENARES'){ chips.push(loteChip('loteFact','Factura llegó')); chips.push(loteChip('loteOC','OC llegó')); }
+    QUICK_EXTRAS.forEach(x=>chips.push(`<label class="lr-chip"><input type="checkbox" class="quick-extra" data-value="${esc(x)}"><span>${esc(x)}</span></label>`));
+    const cen=type==='Venta CENARES'?(()=>{ const d=sumDocs(r,false); return `<div class="lr-steps">${loteStepper('pkgCntGR','GR',d.grCopies)}${loteStepper('pkgCntAct','Actas',d.actas)}${loteStepper('pkgCntPec','Pecosas',d.pecosas)}</div>`; })():'';
+    return `${acc}${cen}<div class="lr-chips">${chips.join('')}<button type="button" class="link-btn lr-more">+ otro documento</button></div>
+      <div class="mini-extra hidden"><input class="pkgExtraInput" placeholder="Ej. Carta, Acta de conformidad…"><button type="button" class="btn tiny-btn pkgAddExtra">Agregar</button><span class="pkgExtraTags"></span></div>`;
+  }
+  function loteTypeChips(selected){
+    return `<div class="lr-types">${TYPES.map(t=>`<button type="button" class="lr-type ${t===selected?'selected':''}" data-set-type="${esc(t)}">${esc(TYPE_SHORT[t]||t)}</button>`).join('')}</div>`;
   }
   function loteAlreadySaved(lote){
     if(!lote.items.length) return false;
@@ -2054,36 +2056,69 @@
     const doneCount=lotes.filter(l=>l.done).length;
     const grtDone=lote.grt && isGRTReceived(base);
     const separated=lote.items.filter(i=>i.separated).map(i=>i.gr);
+    const rowHtml=({r,info,scanned})=>{
+      const t=scanned?scanSuggestedType(info,r):(r.type||'');
+      const fromSunat=scanned && !r.type && !!t; // Venta / Venta CENARES detectadas por SUNAT
+      const sub=[`Pedido ${esc(r.order||'—')}`, esc(r.result||''), scanned?(info.motivo?`SUNAT: ${esc(info.motivo)}`:(info.manual?'Agregada a mano':'')):'No escaneada'].filter(Boolean).join(' · ');
+      return `<div class="lr ${scanned?'on':''}" data-lote-row="${r.id}" data-type="${esc(t)}" data-src="${fromSunat?'sunat':''}">
+        <button type="button" class="lr-check" title="Llegó / no llegó"><span class="lr-box">✓</span><span class="lr-check-txt">LLEGÓ</span></button>
+        <div class="lr-main">
+          <div class="lr-top"><b>${esc(r.gr)}</b>${info.separated?'<span class="lote-tag">Estaba separada</span>':''}<button type="button" class="lr-x" title="Quitar del lote">✕</button></div>
+          <div class="lr-sub">${sub}</div>
+          <div class="lr-type-pick">${loteTypeChips(t)}</div>
+          <div class="lr-docs lote-docs">${loteDocsHtml(r,t)}</div>
+        </div>
+      </div>`;
+    };
     const html=`<div class="lote-progress"><span style="width:${Math.round(doneCount/lotes.length*100)}%"></span></div>
-      <div class="lote-head"><div><span>GRT</span><strong>${esc(lote.grt||'—')}</strong></div><div><span>Destinatario</span><strong>${esc(base.recipient||'—')}</strong></div><div><span>Dirección</span><strong>${esc(base.address||'—')}</strong></div>
-        <label class="shared-grt"><input id="loteGRT" type="checkbox" ${grtDone?'disabled checked':'checked'} ${lote.grt?'':'disabled'}><b>GRT RECIBIDA</b><small>${grtDone?'Ya registrada antes':lote.grt?'Desmarca si NO llegó la guía de Tradel':'Sin GRT'}</small></label></div>
-      ${separated.length?`<div class="alert-box">Estas guías estaban <b>separadas de su grupo</b> en la ruma; júntalas físicamente con este lote: <b>${separated.map(esc).join(', ')}</b></div>`:''}
-      ${others.length?`<div class="alert-box">Esta GRT tiene <b>${others.length} GR más</b> que no se escanearon (abajo, sin marcar). Márcalas solo si llegaron.</div>`:''}
-      ${rows.length>1?`<div class="lote-bulk"><button type="button" class="btn" id="loteAllArrived">✓ Marcar todas como llegaron</button><button type="button" class="btn" id="loteNoneArrived">Desmarcar todas</button></div>`:''}
-      <div class="lote-rows">${rows.map(({r,info,scanned})=>{
-        const t=scanned?scanSuggestedType(info,r):(r.type||'');
-        const sunat=info.motivo?`SUNAT: ${info.motivo}${info.motivo.toLowerCase().includes('venta')?'':' · elige el tipo'}`:(scanned?(info.manual?'Agregada a mano':''):'No escaneada');
-        return `<div class="lote-row ${scanned?'arrived':'not-scanned'}" data-lote-row="${r.id}">
-          <label class="lote-arrived"><input class="loteArrived" type="checkbox" ${scanned?'checked':''}>LLEGÓ</label>
-          <div class="lote-gr"><b>${esc(r.gr)}</b><small>Pedido ${esc(r.order||'—')}</small><small>${esc(r.result||'')}</small>${info.separated?'<span class="lote-tag">Estaba separada</span>':''}<button type="button" class="link-btn lote-remove">✕ Quitar del lote</button></div>
-          <div class="lote-type"><select class="loteType ${t?'':'empty'}">${scanTypeOptions(t)}</select><small>${esc(sunat)}</small></div>
-          <div class="lote-docs pkgDocs">${loteDocsHtml(r,t)}</div></div>`;
-      }).join('')}</div>
-      <div class="modal-actions"><button class="btn" id="loteClose">Cerrar y continuar después</button><button class="btn danger-outline" id="loteDiscard">Descartar lote</button><button class="btn" id="loteSkip">Saltar este lote</button><button class="btn primary big" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
-    openModal(`Lote ${doneCount+1} de ${lotes.length}`, 'Revisa lo físico de esta GRT y marca lo que llegó. Al guardar pasa al siguiente lote.', html, 'lote-modal');
+      <div class="lr-head">
+        <div class="lr-head-info"><div class="lr-grt">${esc(lote.grt||'Sin GRT')}</div><div class="lr-dest">${esc(base.recipient||'—')}</div><div class="lr-addr">${esc(base.address||'')}</div></div>
+        <label class="lr-grt-toggle ${grtDone?'done':''}"><input id="loteGRT" type="checkbox" ${grtDone?'disabled checked':'checked'} ${lote.grt?'':'disabled'}><span><b>GRT RECIBIDA</b><small>${grtDone?'Ya registrada antes':lote.grt?'Desmarca si NO llegó la guía de Tradel':'Sin GRT'}</small></span></label>
+      </div>
+      ${separated.length?`<div class="alert-box">Estaban <b>separadas de su grupo</b> en la ruma; júntalas con este lote: <b>${separated.map(esc).join(', ')}</b></div>`:''}
+      <div class="lr-section"><div class="section-label">1. ¿Qué guías llegaron?</div>
+        ${rows.length>1?`<div class="lr-bulk"><button type="button" class="btn" id="loteAllArrived">✓ Llegaron todas</button><button type="button" class="btn" id="loteNoneArrived">Ninguna</button>${others.length?`<span class="muted small">${others.length} de esta GRT no se escanearon: márcalas solo si llegaron.</span>`:''}</div>`:''}
+      </div>
+      <div class="lr-section" id="loteBulkTypeBox"><div class="section-label">2. Atajo: mismo tipo para todas las que llegaron</div>
+        <div class="lr-types lr-bulk-types">${TYPES.map(t=>`<button type="button" class="lr-type" data-bulk-type="${esc(t)}">${esc(TYPE_SHORT[t]||t)}</button>`).join('')}</div>
+        <div class="muted small">Opcional. Pone ese tipo a todas las marcadas como “llegó”, menos las ventas que ya detectó SUNAT. Si son de tipos distintos (ej. 1 suministro y 2 ventas), elige el tipo en cada guía abajo.</div>
+      </div>
+      <div class="lr-section"><div class="section-label">3. Tipo y documentos de cada guía</div><div class="lr-list">${rows.map(rowHtml).join('')}</div></div>
+      <div class="modal-actions lr-actions"><div class="lr-actions-left"><button class="btn small" id="loteClose">Continuar después</button><button class="btn small" id="loteSkip">Saltar</button><button class="btn small danger-outline" id="loteDiscard">Descartar lote</button></div><button class="btn primary huge" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
+    openModal(`Lote ${doneCount+1} de ${lotes.length}`, 'Marca lo que llegó, elige el tipo y guarda.', html, 'lote-modal');
     const body=$('#modalBody');
+    const wireDocs=row=>{
+      const docs=$('.lr-docs',row);
+      wirePackageExtra(docs);
+      $('.lr-more',docs)?.addEventListener('click',()=>{ $('.mini-extra',docs).classList.remove('hidden'); $('.pkgExtraInput',docs).focus(); });
+      $$('.st-btn',docs).forEach(b=>b.onclick=()=>{ const inp=b.parentNode.querySelector('input'); inp.value=Math.max(0,Math.min(4,Number(inp.value||0)+Number(b.dataset.step))); });
+    };
+    const setRowType=(row,t)=>{
+      const r=getRecord(row.dataset.loteRow); row.dataset.type=t;
+      $$('.lr-type',row).forEach(b=>b.classList.toggle('selected',b.dataset.setType===t));
+      $('.lr-docs',row).innerHTML=loteDocsHtml(r,t); wireDocs(row);
+    };
+    const updateBulkBox=()=>{ const need=$$('[data-lote-row]',body).some(row=>row.dataset.src!=='sunat'); $('#loteBulkTypeBox').classList.toggle('hidden',!need); };
     $$('[data-lote-row]',body).forEach(row=>{
-      const r=getRecord(row.dataset.loteRow), sel=$('.loteType',row), docs=$('.lote-docs',row), chk=$('.loteArrived',row);
-      wirePackageExtra(docs); wireLoteCounts(docs);
-      sel.onchange=()=>{ sel.classList.toggle('empty',!sel.value); docs.innerHTML=loteDocsHtml(r,sel.value); wirePackageExtra(docs); wireLoteCounts(docs); };
-      chk.onchange=()=>row.classList.toggle('arrived',chk.checked);
-      $('.lote-remove',row).onclick=()=>{
+      const r=getRecord(row.dataset.loteRow);
+      wireDocs(row);
+      $('.lr-check',row).onclick=()=>row.classList.toggle('on');
+      $$('.lr-type',row).forEach(b=>b.onclick=()=>{ row.dataset.src=''; setRowType(row,b.dataset.setType); updateBulkBox(); });
+      $('.lr-x',row).onclick=()=>{
         if(!confirm(`¿Quitar ${r.gr} de este lote? No se registrará nada para esta guía.`)) return;
         lote.items=lote.items.filter(i=>i.recordId!==r.id); bumpLote(lote); saveScan(); row.parentNode.removeChild(row);
         if(!$$('[data-lote-row]',body).length){ lote.done=true; lote.discarded=true; bumpLote(lote); saveScan(); closeModal(); toast('Lote vacío: se descartó'); openNextLote(); }
       };
     });
-    const setAll=v=>$$('[data-lote-row]',body).forEach(row=>{ const c=$('.loteArrived',row); c.checked=v; row.classList.toggle('arrived',v); });
+    $$('[data-bulk-type]',body).forEach(b=>b.onclick=()=>{
+      const t=b.dataset.bulkType;
+      const targets=$$('[data-lote-row].on',body).filter(row=>row.dataset.src!=='sunat');
+      if(!targets.length){ toast('Primero marca qué guías llegaron',true); return; }
+      targets.forEach(row=>setRowType(row,t));
+      $$('[data-bulk-type]',body).forEach(x=>x.classList.toggle('selected',x===b));
+    });
+    updateBulkBox();
+    const setAll=v=>$$('[data-lote-row]',body).forEach(row=>row.classList.toggle('on',v));
     $('#loteAllArrived')?.addEventListener('click',()=>setAll(true));
     $('#loteNoneArrived')?.addEventListener('click',()=>setAll(false));
     $('#loteClose').onclick=()=>{ closeModal(); renderScan(); };
@@ -2091,17 +2126,16 @@
     $('#loteDiscard').onclick=()=>{ if(!confirm('¿Descartar este lote? Ninguna de sus guías se registrará.')) return; lote.done=true; lote.discarded=true; bumpLote(lote); saveScan(); closeModal(); toast('Lote descartado'); openNextLote(); };
     $('#loteSave').onclick=()=>saveLote(lote.id);
   }
-  function wireLoteCounts(root){ $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',root).forEach(inp=>inp.oninput=()=>inp.classList.toggle('missing',inp.value==='')); }
   async function saveLote(loteId){
     const findLote=()=>(scan.lotes||[]).find(l=>l.id===loteId);
     let lote=findLote(), body=$('#modalBody'), saveBtn=$('#loteSave');
     if(!lote){ closeModal(); openNextLote(); return; }
     if(saveBtn.disabled) return;
-    let rows=$$('[data-lote-row]',body).map(row=>({row,id:row.dataset.loteRow,r:getRecord(row.dataset.loteRow),arrived:$('.loteArrived',row).checked,type:$('.loteType',row).value,docs:$('.lote-docs',row)}));
+    let rows=$$('[data-lote-row]',body).map(row=>({row,id:row.dataset.loteRow,r:getRecord(row.dataset.loteRow),arrived:row.classList.contains('on'),type:row.dataset.type||'',docs:$('.lote-docs',row)}));
     let arrived=rows.filter(x=>x.arrived);
     const grtChk=$('#loteGRT'), grtNew=!!(lote.grt && grtChk && grtChk.checked && !grtChk.disabled);
     const noType=arrived.find(x=>!x.type);
-    if(noType){ toast(`Elige el tipo de la GR ${noType.r.gr}`,true); $('.loteType',noType.row).focus(); return; }
+    if(noType){ toast(`Falta el tipo de la GR ${noType.r.gr}`,true); noType.row.scrollIntoView({block:'center',behavior:'smooth'}); noType.row.classList.add('lr-warn'); setTimeout(()=>noType.row.classList.remove('lr-warn'),1600); return; }
     if(!arrived.length && !grtNew && !confirm('No marcaste nada como recibido en este lote. ¿Pasar al siguiente sin registrar?')) return;
     // Antes de guardar se toman los cambios que haya hecho la otra usuaria (consulta pequeña), para no pisarlos.
     saveBtn.disabled=true; saveBtn.textContent='GUARDANDO…';
@@ -2115,7 +2149,7 @@
       const docs={grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]};
       if(type==='Venta CENARES'){ docs.grCopies=clamp($('.pkgCntGR',area)?.value); docs.actas=clamp($('.pkgCntAct',area)?.value); docs.pecosas=clamp($('.pkgCntPec',area)?.value); }
       else docs.gr=1;
-      const fs=$('.pkgFact',area)?.value||'', os=$('.pkgOC',area)?.value||'';
+      const fs=$('.loteFact',area)?.checked?'Recibido':'', os=$('.loteOC',area)?.checked?'Recibido':'';
       if(fs==='Recibido')docs.factura=1; if(os==='Recibido')docs.oc=1;
       if(type==='Venta'||type==='Venta CENARES'){
         if(fs) r.facturaState=fs; else if(!r.facturaState) r.facturaState='No aplica';
