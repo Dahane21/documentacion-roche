@@ -51,7 +51,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.15-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.16-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -70,7 +70,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.15-web';
+    copy.version='2.2.16-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -110,7 +110,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.15-web';
+      state.version='2.2.16-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -122,8 +122,8 @@
   // y la base completa se descarga únicamente cuando otra persona guardó algo nuevo.
   // Tampoco se consulta mientras la pestaña está oculta o minimizada.
   const isRemoteNewer = (remoteAt) => !lastRemoteUpdatedAt || Date.parse(remoteAt) > Date.parse(lastRemoteUpdatedAt);
-  async function refreshRemoteIfNewer(){
-    if(!db || !authUser || remoteSaving || remoteSaveTimer || remoteRefreshing || document.hidden || !$('#modalBackdrop')?.classList.contains('hidden')) return;
+  async function refreshRemoteIfNewer(force=false){
+    if(!db || !authUser || remoteSaving || remoteSaveTimer || remoteRefreshing || document.hidden || (!force && !$('#modalBackdrop')?.classList.contains('hidden'))) return;
     remoteRefreshing=true;
     try{
       const head=await db.from('app_state').select('updated_at').eq('id',APP_STATE_ID).maybeSingle();
@@ -131,9 +131,9 @@
       const {data,error}=await db.from('app_state').select('data,updated_at').eq('id',APP_STATE_ID).maybeSingle();
       if(error||!data?.data||!data.updated_at||!isRemoteNewer(data.updated_at))return;
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
-      if(remoteSaving || remoteSaveTimer || !$('#modalBackdrop')?.classList.contains('hidden'))return;
+      if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.15-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.16-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -335,7 +335,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.15-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.16-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -347,7 +347,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.15-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.16-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -1888,22 +1888,18 @@
     if(type==='Venta') return `${acc}<div class="mini-states">${stateSelect('pkgFact','Factura')}${stateSelect('pkgOC','OC')}</div>${extra}`;
     if(type==='Venta CENARES'){
       const d=sumDocs(r,false);
-      const cnt=(cls,label,have)=>`<label class="lote-count">${label} <input class="${cls} missing" type="number" min="0" max="4" inputmode="numeric" placeholder="?"><span class="mini-expected">llegaron · esperadas 4${have?` (ya ${have})`:''}</span></label>`;
+      const cnt=(cls,label,have)=>`<label class="lote-count">${label} <input class="${cls}" type="number" min="0" max="4" inputmode="numeric" value="0"><span class="mini-expected">llegaron · esperadas 4${have?` (ya ${have})`:''}</span></label>`;
       return `${acc}<div class="mini-counts">${cnt('pkgCntGR','GR',d.grCopies)}${cnt('pkgCntAct','Actas',d.actas)}${cnt('pkgCntPec','Pecosas',d.pecosas)}</div><div class="mini-states">${stateSelect('pkgFact','Factura')}${stateSelect('pkgOC','OC')}</div>${extra}`;
     }
     return `${acc}${extra}`;
-  }
-  async function waitForSync(){
-    for(let i=0;i<60 && (remoteSaveTimer||remoteSaving);i++) await new Promise(r=>setTimeout(r,100));
-    await refreshRemoteIfNewer();
   }
   function openNextLote(){
     const lotes=scan.lotes||[];
     let idx=lotes.findIndex(l=>!l.done && !l.skipped);
     if(idx<0){ lotes.forEach(l=>l.skipped=false); idx=lotes.findIndex(l=>!l.done); }
     if(idx<0){
-      const total=lotes.length; scan.lotes=null; saveScan(); renderScan(); renderAll();
-      if(total) toast(`Ruma registrada: ${total} lote(s). Revisa “Listos para enviar”.`);
+      const total=lotes.filter(l=>!l.discarded).length, discarded=lotes.length-total; scan.lotes=null; saveScan(); renderScan(); renderAll();
+      if(lotes.length) toast(`Ruma terminada: ${total} lote(s) registrados${discarded?`, ${discarded} descartado(s)`:''}. Revisa “Listos para enviar”.`);
       return;
     }
     openLote(idx);
@@ -1929,11 +1925,11 @@
         const sunat=info.motivo?`SUNAT: ${info.motivo}${info.motivo.toLowerCase().includes('venta')?'':' · elige el tipo'}`:(scanned?(info.manual?'Agregada a mano':''):'No escaneada');
         return `<div class="lote-row ${scanned?'arrived':'not-scanned'}" data-lote-row="${r.id}">
           <label class="lote-arrived"><input class="loteArrived" type="checkbox" ${scanned?'checked':''}>LLEGÓ</label>
-          <div class="lote-gr"><b>${esc(r.gr)}</b><small>Pedido ${esc(r.order||'—')}</small><small>${esc(r.result||'')}</small>${info.separated?'<span class="lote-tag">Estaba separada</span>':''}</div>
+          <div class="lote-gr"><b>${esc(r.gr)}</b><small>Pedido ${esc(r.order||'—')}</small><small>${esc(r.result||'')}</small>${info.separated?'<span class="lote-tag">Estaba separada</span>':''}<button type="button" class="link-btn lote-remove">✕ Quitar del lote</button></div>
           <div class="lote-type"><select class="loteType ${t?'':'empty'}">${scanTypeOptions(t)}</select><small>${esc(sunat)}</small></div>
           <div class="lote-docs pkgDocs">${loteDocsHtml(r,t)}</div></div>`;
       }).join('')}</div>
-      <div class="modal-actions"><button class="btn" id="loteClose">Cerrar y continuar después</button><button class="btn" id="loteSkip">Saltar este lote</button><button class="btn primary big" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
+      <div class="modal-actions"><button class="btn" id="loteClose">Cerrar y continuar después</button><button class="btn danger-outline" id="loteDiscard">Descartar lote</button><button class="btn" id="loteSkip">Saltar este lote</button><button class="btn primary big" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
     openModal(`Lote ${doneCount+1} de ${lotes.length}`, 'Revisa lo físico de esta GRT y marca lo que llegó. Al guardar pasa al siguiente lote.', html, 'lote-modal');
     const body=$('#modalBody');
     $$('[data-lote-row]',body).forEach(row=>{
@@ -1941,22 +1937,32 @@
       wirePackageExtra(docs); wireLoteCounts(docs);
       sel.onchange=()=>{ sel.classList.toggle('empty',!sel.value); docs.innerHTML=loteDocsHtml(r,sel.value); wirePackageExtra(docs); wireLoteCounts(docs); };
       chk.onchange=()=>row.classList.toggle('arrived',chk.checked);
+      $('.lote-remove',row).onclick=()=>{
+        if(!confirm(`¿Quitar ${r.gr} de este lote? No se registrará nada para esta guía.`)) return;
+        lote.items=lote.items.filter(i=>i.recordId!==r.id); saveScan(); row.parentNode.removeChild(row);
+        if(!$$('[data-lote-row]',body).length){ lote.done=true; lote.discarded=true; saveScan(); closeModal(); toast('Lote vacío: se descartó'); openNextLote(); }
+      };
     });
     $('#loteClose').onclick=()=>{ closeModal(); renderScan(); };
     $('#loteSkip').onclick=()=>{ lote.skipped=true; saveScan(); closeModal(); openNextLote(); };
+    $('#loteDiscard').onclick=()=>{ if(!confirm('¿Descartar este lote? Ninguna de sus guías se registrará.')) return; lote.done=true; lote.discarded=true; saveScan(); closeModal(); toast('Lote descartado'); openNextLote(); };
     $('#loteSave').onclick=()=>saveLote(idx);
   }
   function wireLoteCounts(root){ $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',root).forEach(inp=>inp.oninput=()=>inp.classList.toggle('missing',inp.value==='')); }
   async function saveLote(idx){
-    const lote=scan.lotes[idx], body=$('#modalBody');
-    const rows=$$('[data-lote-row]',body).map(row=>({row,r:getRecord(row.dataset.loteRow),arrived:$('.loteArrived',row).checked,type:$('.loteType',row).value,docs:$('.lote-docs',row)}));
-    const arrived=rows.filter(x=>x.arrived);
+    const lote=scan.lotes[idx], body=$('#modalBody'), saveBtn=$('#loteSave');
+    if(saveBtn.disabled) return;
+    let rows=$$('[data-lote-row]',body).map(row=>({row,id:row.dataset.loteRow,r:getRecord(row.dataset.loteRow),arrived:$('.loteArrived',row).checked,type:$('.loteType',row).value,docs:$('.lote-docs',row)}));
+    let arrived=rows.filter(x=>x.arrived);
     const grtChk=$('#loteGRT'), grtNew=!!(lote.grt && grtChk && grtChk.checked && !grtChk.disabled);
     const noType=arrived.find(x=>!x.type);
     if(noType){ toast(`Elige el tipo de la GR ${noType.r.gr}`,true); $('.loteType',noType.row).focus(); return; }
-    const cenEmpty=arrived.find(x=>x.type==='Venta CENARES' && $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',x.docs).some(i=>i.value===''));
-    if(cenEmpty){ toast(`CENARES ${cenEmpty.r.gr}: escribe cuántas GR, actas y pecosas llegaron (0 si ninguna)`,true); $$('.pkgCntGR,.pkgCntAct,.pkgCntPec',cenEmpty.docs).find(i=>i.value==='')?.focus(); return; }
     if(!arrived.length && !grtNew && !confirm('No marcaste nada como recibido en este lote. ¿Pasar al siguiente sin registrar?')) return;
+    // Antes de guardar se toman los cambios que haya hecho la otra usuaria (consulta pequeña), para no pisarlos.
+    saveBtn.disabled=true; saveBtn.textContent='GUARDANDO…';
+    await refreshRemoteIfNewer(true);
+    rows.forEach(x=>{ x.r=getRecord(x.id); });
+    rows=rows.filter(x=>x.r); arrived=rows.filter(x=>x.arrived);
     if(grtNew) setGRTReceived(lote.grt);
     const clamp=v=>Math.max(0,Math.min(4,Number(v||0)));
     arrived.forEach(({r,type,docs:area})=>{
@@ -1981,8 +1987,7 @@
     saveState(); audit('Registro de lote escaneado',`${lote.grt||'(sin GRT)'}: ${arrived.length} GR`);
     closeModal(); renderAll();
     toast(`Lote guardado: ${arrived.length} GR${grtNew?' + GRT':''}`);
-    await waitForSync(); // toma cambios de la otra usuaria antes de abrir el siguiente lote
-    openNextLote();
+    openNextLote(); // pasa directo al siguiente; la subida a Supabase sigue en segundo plano
   }
 
   $('#scanStart').addEventListener('click',startScanCamera);
@@ -2001,9 +2006,11 @@
     if(!db){ $('#loginError').textContent='Supabase no pudo inicializarse.'; $('#loginError').classList.remove('hidden'); return; }
     const {data}=await db.auth.getSession();
     if(data?.session?.user) await startAuthenticatedSession(data.session.user);
-    setInterval(refreshRemoteIfNewer,5000);
+    setInterval(()=>refreshRemoteIfNewer(),5000);
     // Al volver a la pestaña se revisa al instante, así no se trabaja con datos atrasados.
     document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refreshRemoteIfNewer(); });
+    // Si todavía se está subiendo un cambio a Supabase, el navegador pide confirmar antes de cerrar la página.
+    window.addEventListener('beforeunload',e=>{ if(remoteSaving||remoteSaveTimer||remotePushPending){ e.preventDefault(); e.returnValue=''; } });
   }
   initWebApp();
 })();
