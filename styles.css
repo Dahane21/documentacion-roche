@@ -287,3 +287,37 @@ body{background:var(--bg);color:var(--text)}
   .main{padding:0 14px 14px}.topbar{margin:0 -14px 14px;padding:9px 14px;position:static}.sidebar{background:var(--dark)}
   .nav{padding:8px;flex-direction:row}.nav-section-label{display:none}.nav-btn{white-space:nowrap}.side-brand{display:none}.sidebar-footer{display:none}
 }
+
+/* ---------- Escanear ruma (V2.2.15) ---------- */
+.scan-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}.scan-head p{max-width:720px}.scan-actions{display:flex;gap:8px;flex-wrap:wrap}
+.scan-camera{position:relative;margin:14px auto 0;max-width:560px;aspect-ratio:1/1;background:#000;border-radius:14px;overflow:hidden}
+.scan-camera video{width:100%;height:100%;object-fit:cover;display:block}
+.scan-frame{position:absolute;inset:14%;border:3px solid rgba(255,255,255,.85);border-radius:16px;box-shadow:0 0 0 999px rgba(0,0,0,.28);pointer-events:none;transition:border-color .15s}
+.scan-flash{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .25s}
+.scan-flash.ok{background:rgba(6,118,71,.45);opacity:1}.scan-flash.error{background:rgba(180,35,24,.5);opacity:1}.scan-flash.dup{background:rgba(181,71,8,.45);opacity:1}
+.scan-camera-msg{position:absolute;left:0;right:0;bottom:0;padding:10px 12px;background:rgba(16,24,40,.72);color:#fff;font-weight:800;text-align:center;font-size:15px}
+.scan-manual{display:flex;gap:8px;margin-top:14px}.scan-manual input{flex:1;min-width:0;font-size:17px;font-weight:700}
+.scan-summary{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 8px}.scan-chip{padding:7px 11px;border-radius:999px;font-weight:800;font-size:12.5px;background:#f2f4f7;color:#344054}.scan-chip.ok{background:var(--ok-soft);color:var(--ok)}.scan-chip.wait{background:#eef3ff;color:#2446a8}.scan-chip.err{background:var(--danger-soft);color:var(--danger)}
+.scan-list{display:flex;flex-direction:column;gap:6px}
+.scan-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid var(--border);border-left-width:5px;border-radius:10px;padding:9px 10px;background:#fff}
+.scan-item.ok{border-left-color:var(--ok)}.scan-item.wait{border-left-color:#7c9cff}.scan-item.error{border-left-color:var(--danger);background:#fffafa}
+.scan-num{font-weight:900;color:var(--muted);text-align:center}.scan-main{min-width:0}.scan-main b{font-size:15px}.scan-main small{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.scan-msg{font-size:12px;font-weight:800}.scan-item.ok .scan-msg{color:var(--ok)}.scan-item.wait .scan-msg{color:#2446a8}.scan-item.error .scan-msg{color:var(--danger)}
+.scan-side{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.scan-bottom{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--border);padding-top:14px}
+.scan-empty{border:1px dashed var(--border);border-radius:10px;padding:18px;color:var(--muted);text-align:center}
+.scan-resume{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:1px solid #fdba74;background:#fff7ed;color:#9a3412;border-radius:12px;padding:12px 14px;margin-top:12px}
+/* Ventana de lote */
+.lote-modal{width:min(1100px,98vw)}.lote-progress{height:6px;background:#eef1f5;border-radius:99px;overflow:hidden;margin-bottom:12px}.lote-progress span{display:block;height:100%;background:var(--accent)}
+.lote-head{display:grid;grid-template-columns:150px 1fr 1.3fr 230px;gap:10px}.lote-head>div{border:1px solid var(--border);border-radius:10px;padding:10px;min-width:0}.lote-head span{display:block;font-size:10.5px;color:var(--muted);margin-bottom:4px}
+.lote-rows{display:flex;flex-direction:column;gap:9px;margin-top:12px}
+.lote-row{border:1px solid var(--border);border-radius:12px;padding:11px;display:grid;grid-template-columns:auto minmax(150px,200px) minmax(170px,220px) minmax(0,1fr);gap:12px;align-items:start}
+.lote-row.not-scanned{background:#f8f9fb;border-style:dashed}.lote-row.not-scanned:not(.arrived){opacity:.75}
+.lote-arrived{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:800;color:var(--muted)}.lote-arrived input{width:26px;height:26px}
+.lote-gr b{display:block;font-size:15px}.lote-gr small{display:block;color:var(--muted)}.lote-tag{display:inline-flex;margin-top:4px;padding:3px 7px;border-radius:999px;font-size:10.5px;font-weight:800;background:#fff4e8;color:#b54708}
+.lote-type select{width:100%;font-weight:800}.lote-type select.empty{border-color:#fdba74;background:#fff7ed}.lote-type small{display:block;margin-top:4px;color:var(--muted);font-size:11px}
+.lote-docs{display:flex;flex-direction:column;gap:7px;min-width:0}.lote-docs .mini-states,.lote-docs .mini-counts{gap:10px}
+.lote-count input{width:58px}.lote-count input.missing{border-color:#fdba74;background:#fff7ed}
+@media(max-width:900px){.lote-head{grid-template-columns:1fr 1fr}.lote-row{grid-template-columns:auto 1fr}.lote-type,.lote-docs{grid-column:1/-1}.scan-bottom .btn.huge{width:100%}}
+/* Celular: el menú lateral pasa arriba (antes la regla de .app de más arriba lo dejaba como columna de 252px) */
+@media(max-width:900px){.app{grid-template-columns:minmax(0,1fr)}.sidebar{position:static;height:auto;min-width:0}.nav{overflow-x:auto}}
