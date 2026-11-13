@@ -55,7 +55,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.21-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.22-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -75,7 +75,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.21-web';
+    copy.version='2.2.22-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -115,7 +115,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.21-web';
+      state.version='2.2.22-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -138,7 +138,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.21-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.22-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -340,7 +340,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.21-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.22-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -352,7 +352,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.21-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.22-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -1649,7 +1649,7 @@
   // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
   // y se abre una ventana por lote para marcar lo que llegó físicamente.
   const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
-  const APP_VERSION='2.2.21';
+  const APP_VERSION='2.2.22';
   let scanCloud={state:'idle',at:'',msg:''}; // estado de la ruma en Supabase, visible en pantalla
   const SCAN_MAX_PARALLEL=2;   // consultas a la vez (no saturar a SUNAT)
   const SCAN_AUTO_RETRIES=2;   // reintentos automáticos si SUNAT no responde
@@ -2008,14 +2008,21 @@
   function loteStepper(cls,label,have){
     return `<div class="lr-step"><span class="lr-step-label">${label}${have?` <small>(ya ${have})</small>`:''}</span><button type="button" class="st-btn" data-step="-1">−</button><input class="${cls}" type="number" min="0" max="4" inputmode="numeric" value="0"><button type="button" class="st-btn" data-step="1">+</button><small class="lr-step-of">de 4</small></div>`;
   }
+  // Factura: por defecto "Pendiente" (la venta queda Parcial hasta que llegue o se marque "No aplica").
+  // OC: por defecto "No aplica" (casi nunca se pide), salvo que la guía ya tenga otro estado.
+  function loteStateSeg(field,label,current,def){
+    if(current==='Recibido') return `<div class="lr-seg done" data-field="${field}" data-value=""><span class="lr-seg-label">${label}</span><span class="lr-seg-done">✓ ya recibida antes</span></div>`;
+    const v=current||def;
+    return `<div class="lr-seg" data-field="${field}" data-value="${esc(v)}"><span class="lr-seg-label">${label}</span>${['Recibido','Pendiente','No aplica'].map(x=>`<button type="button" class="lr-seg-btn ${x===v?'selected':''} ${x==='Recibido'?'ok':x==='Pendiente'?'wait':'na'}" data-v="${x}">${x==='Recibido'?'Llegó':x}</button>`).join('')}</div>`;
+  }
   function loteDocsHtml(r,type){
     if(!type) return `<div class="lr-hint">Elige el tipo arriba para ver qué marcar.</div>`;
     const acc=packageAccumulatedReference(r);
     const chips=[];
-    if(type==='Venta'||type==='Venta CENARES'){ chips.push(loteChip('loteFact','Factura llegó')); chips.push(loteChip('loteOC','OC llegó')); }
     QUICK_EXTRAS.forEach(x=>chips.push(`<label class="lr-chip"><input type="checkbox" class="quick-extra" data-value="${esc(x)}"><span>${esc(x)}</span></label>`));
     const cen=type==='Venta CENARES'?(()=>{ const d=sumDocs(r,false); return `<div class="lr-steps">${loteStepper('pkgCntGR','GR',d.grCopies)}${loteStepper('pkgCntAct','Actas',d.actas)}${loteStepper('pkgCntPec','Pecosas',d.pecosas)}</div>`; })():'';
-    return `${acc}${cen}<div class="lr-chips">${chips.join('')}<button type="button" class="link-btn lr-more">+ otro documento</button></div>
+    const segs=(type==='Venta'||type==='Venta CENARES')?`<div class="lr-segs">${loteStateSeg('fact','Factura',r.facturaState,'Pendiente')}${loteStateSeg('oc','OC',r.ocState,'No aplica')}</div>`:'';
+    return `${acc}${cen}${segs}<div class="lr-chips">${chips.join('')}<button type="button" class="link-btn lr-more">+ otro documento</button></div>
       <div class="mini-extra hidden"><input class="pkgExtraInput" placeholder="Ej. Carta, Acta de conformidad…"><button type="button" class="btn tiny-btn pkgAddExtra">Agregar</button><span class="pkgExtraTags"></span></div>`;
   }
   function loteTypeChips(selected){
@@ -2023,7 +2030,7 @@
   }
   function loteAlreadySaved(lote){
     if(!lote.items.length) return false;
-    const since=lote.createdAt||new Date(Date.now()-7*864e5).toISOString();
+    const since=lote.reopenedAt||lote.createdAt||new Date(Date.now()-7*864e5).toISOString();
     return lote.items.every(i=>{ const r=getRecord(i.recordId); return !!r && (r.audit||[]).some(a=>a.action==='Registro por escaneo de ruma' && String(a.at)>=since); });
   }
   function markSavedLotes(){
@@ -2056,6 +2063,8 @@
     const doneCount=lotes.filter(l=>l.done).length;
     const grtDone=lote.grt && isGRTReceived(base);
     const separated=lote.items.filter(i=>i.separated).map(i=>i.gr);
+    // Lote anterior = el último que se terminó (guardado o descartado) antes de este.
+    const prevLote=lotes.filter(l=>l.done && l.id!==lote.id && l.doneAt).sort((a,b)=>String(b.doneAt).localeCompare(String(a.doneAt)))[0]||null;
     const rowHtml=({r,info,scanned})=>{
       const t=scanned?scanSuggestedType(info,r):(r.type||'');
       const fromSunat=scanned && !r.type && !!t; // Venta / Venta CENARES detectadas por SUNAT
@@ -2084,13 +2093,14 @@
         <div class="muted small">Opcional. Pone ese tipo a todas las marcadas como “llegó”, menos las ventas que ya detectó SUNAT. Si son de tipos distintos (ej. 1 suministro y 2 ventas), elige el tipo en cada guía abajo.</div>
       </div>
       <div class="lr-section"><div class="section-label">3. Tipo y documentos de cada guía</div><div class="lr-list">${rows.map(rowHtml).join('')}</div></div>
-      <div class="modal-actions lr-actions"><div class="lr-actions-left"><button class="btn small" id="loteClose">Continuar después</button><button class="btn small" id="loteSkip">Saltar</button><button class="btn small danger-outline" id="loteDiscard">Descartar lote</button></div><button class="btn primary huge" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
+      <div class="modal-actions lr-actions"><div class="lr-actions-left">${prevLote?`<button class="btn small" id="lotePrev">← Lote anterior</button>`:''}<button class="btn small" id="loteClose">Continuar después</button><button class="btn small" id="loteSkip">Saltar</button><button class="btn small danger-outline" id="loteDiscard">Descartar lote</button></div><button class="btn primary huge" id="loteSave">${lotes.filter(l=>!l.done).length>1?'GUARDAR Y SIGUIENTE LOTE':'GUARDAR Y TERMINAR'}</button></div>`;
     openModal(`Lote ${doneCount+1} de ${lotes.length}`, 'Marca lo que llegó, elige el tipo y guarda.', html, 'lote-modal');
     const body=$('#modalBody');
     const wireDocs=row=>{
       const docs=$('.lr-docs',row);
       wirePackageExtra(docs);
       $('.lr-more',docs)?.addEventListener('click',()=>{ $('.mini-extra',docs).classList.remove('hidden'); $('.pkgExtraInput',docs).focus(); });
+      $$('.lr-seg-btn',docs).forEach(b=>b.onclick=()=>{ const seg=b.closest('.lr-seg'); seg.dataset.value=b.dataset.v; $$('.lr-seg-btn',seg).forEach(x=>x.classList.toggle('selected',x===b)); });
       $$('.st-btn',docs).forEach(b=>b.onclick=()=>{ const inp=b.parentNode.querySelector('input'); inp.value=Math.max(0,Math.min(4,Number(inp.value||0)+Number(b.dataset.step))); });
     };
     const setRowType=(row,t)=>{
@@ -2122,9 +2132,31 @@
     $('#loteAllArrived')?.addEventListener('click',()=>setAll(true));
     $('#loteNoneArrived')?.addEventListener('click',()=>setAll(false));
     $('#loteClose').onclick=()=>{ closeModal(); renderScan(); };
+    $('#lotePrev')?.addEventListener('click',()=>reopenLote(prevLote.id));
     $('#loteSkip').onclick=()=>{ lote.skipped=true; bumpLote(lote); saveScan(); closeModal(); openNextLote(); };
-    $('#loteDiscard').onclick=()=>{ if(!confirm('¿Descartar este lote? Ninguna de sus guías se registrará.')) return; lote.done=true; lote.discarded=true; bumpLote(lote); saveScan(); closeModal(); toast('Lote descartado'); openNextLote(); };
+    $('#loteDiscard').onclick=()=>{ if(!confirm('¿Descartar este lote? Ninguna de sus guías se registrará.')) return; lote.done=true; lote.discarded=true; lote.doneAt=nowIso(); bumpLote(lote); saveScan(); closeModal(); toast('Lote descartado'); openNextLote(); };
     $('#loteSave').onclick=()=>saveLote(lote.id);
+  }
+  // Vuelve a abrir un lote ya terminado para corregirlo: anula lo que ese lote registró y restaura cómo estaban las guías.
+  function reopenLote(loteId){
+    const lote=(scan.lotes||[]).find(l=>l.id===loteId); if(!lote) return;
+    const regs=(lote.undo||[]).filter(u=>u.receiptId);
+    if(!lote.discarded && regs.length){
+      const sent=regs.some(u=>{ const r=getRecord(u.recordId); return (r?.receipts||[]).some(m=>m.id===u.receiptId && m.sentReportId); });
+      if(sent){ toast('Ese lote ya se incluyó en un reporte a Roche; corrígelo desde el detalle de la guía.',true); return; }
+      if(!confirm(`Volver al lote ${lote.grt||''}: se anulará lo que registraste en él (${regs.length} GR) para que lo llenes de nuevo. ¿Continuar?`)) return;
+      regs.forEach(u=>{
+        const r=getRecord(u.recordId); if(!r) return;
+        const m=(r.receipts||[]).find(x=>x.id===u.receiptId); if(m){ m.annulled=true; m.annulledAt=nowIso(); m.annulledBy=state.currentUser; m.annulReason='Corrección desde Escanear ruma (lote anterior)'; }
+        r.type=u.prevType; r.facturaState=u.prevFact; r.ocState=u.prevOC;
+        r.audit=r.audit||[]; r.audit.push({at:nowIso(),user:state.currentUser,action:'Anulación por corrección de lote',detail:'Se reabrió el lote para corregirlo'});
+        recalc(r);
+      });
+      if(lote.grtNew && lote.grt){ const g=state.grtLedger?.[lote.grt]; if(g && !g.sentReportId){ delete state.grtLedger[lote.grt]; if(state.grtReceived) delete state.grtReceived[lote.grt]; } }
+      saveState(); audit('Lote reabierto para corregir',`${lote.grt||'(sin GRT)'}: ${regs.length} GR anuladas`);
+    }
+    lote.done=false; lote.discarded=false; lote.skipped=false; lote.undo=[]; lote.grtNew=false; lote.reopenedAt=nowIso(); delete lote.doneAt; bumpLote(lote); saveScan();
+    closeModal(); renderAll(); openLote(lote.id);
   }
   async function saveLote(loteId){
     const findLote=()=>(scan.lotes||[]).find(l=>l.id===loteId);
@@ -2144,12 +2176,14 @@
     rows=rows.filter(x=>x.r); arrived=rows.filter(x=>x.arrived);
     if(grtNew) setGRTReceived(lote.grt);
     const clamp=v=>Math.max(0,Math.min(4,Number(v||0)));
+    const undo=[]; // para "Lote anterior": qué se registró y cómo estaba antes
     arrived.forEach(({r,type,docs:area})=>{
+      undo.push({recordId:r.id,prevType:r.type||'',prevFact:r.facturaState||'',prevOC:r.ocState||'',receiptId:''});
       r.type=type;
       const docs={grt:0,gr:0,grCopies:0,actas:0,pecosas:0,factura:0,oc:0,extras:[]};
       if(type==='Venta CENARES'){ docs.grCopies=clamp($('.pkgCntGR',area)?.value); docs.actas=clamp($('.pkgCntAct',area)?.value); docs.pecosas=clamp($('.pkgCntPec',area)?.value); }
       else docs.gr=1;
-      const fs=$('.loteFact',area)?.checked?'Recibido':'', os=$('.loteOC',area)?.checked?'Recibido':'';
+      const fs=$('.lr-seg[data-field="fact"]',area)?.dataset.value||'', os=$('.lr-seg[data-field="oc"]',area)?.dataset.value||'';
       if(fs==='Recibido')docs.factura=1; if(os==='Recibido')docs.oc=1;
       if(type==='Venta'||type==='Venta CENARES'){
         if(fs) r.facturaState=fs; else if(!r.facturaState) r.facturaState='No aplica';
@@ -2157,12 +2191,13 @@
       }else{ if(!r.facturaState) r.facturaState='No aplica'; if(!r.ocState) r.ocState='No aplica'; }
       $$('.extra-tag',area).forEach(x=>docs.extras.push(x.dataset.value)); readQuickExtras(area,docs);
       r.receipts=r.receipts||[]; r.audit=r.audit||[];
-      r.receipts.push({id:uid('rec'),at:nowIso(),user:state.currentUser,docs,sentReportId:null,facturaStateChange:fs||'',ocStateChange:os||'',annulled:false});
+      const recId=uid('rec'); undo[undo.length-1].receiptId=recId;
+      r.receipts.push({id:recId,at:nowIso(),user:state.currentUser,docs,sentReportId:null,facturaStateChange:fs||'',ocStateChange:os||'',annulled:false});
       r.audit.push({at:nowIso(),user:state.currentUser,action:'Registro por escaneo de ruma',detail:docsTextFromRaw(docs)});
       recalc(r);
     });
     rows.filter(x=>!x.arrived).forEach(x=>recalc(x.r));
-    lote=findLote()||lote; lote.done=true; bumpLote(lote); saveScan();
+    lote=findLote()||lote; lote.done=true; lote.discarded=false; lote.undo=undo; lote.grtNew=grtNew; lote.doneAt=nowIso(); bumpLote(lote); saveScan();
     saveState(); audit('Registro de lote escaneado',`${lote.grt||'(sin GRT)'}: ${arrived.length} GR`);
     closeModal(); renderAll();
     toast(`Lote guardado: ${arrived.length} GR${grtNew?' + GRT':''}`);
