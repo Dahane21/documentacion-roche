@@ -55,7 +55,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.23-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.25-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -75,7 +75,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.23-web';
+    copy.version='2.2.25-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -115,7 +115,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.23-web';
+      state.version='2.2.25-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -138,7 +138,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.23-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.25-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -340,7 +340,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.23-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.25-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -352,7 +352,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.23-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.25-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -627,6 +627,36 @@
     const hist=history.length?`<div class="follow-history"><h4>Historial</h4>${history.map(x=>`<div class="follow-item"><div class="follow-copy"><div><b>Situación:</b> ${esc(x.situation||'—')}</div><div><b>Observación:</b> ${esc(x.note||'—')}</div></div><small>${new Date(x.at).toLocaleString('es-PE')} · ${esc(x.user||'—')}</small></div>`).join('')}</div>`:'<div class="empty-hint">Aún no hay observaciones registradas en el sistema nuevo.</div>';
     const html=`${baseInfo(r)}<div class="form-grid follow-form"><div class="field span2"><label>Situación</label><input id="followSituation" placeholder="Ej. En tránsito a Lima, En custodia, Trámite detenido"></div><div class="field span2"><label>Observación</label><textarea id="followNote" rows="3" placeholder="Escribe la observación actual…"></textarea></div></div>${hist}<div class="modal-actions"><button class="btn" id="followCancel">Cancelar</button><button class="btn primary" id="followSave">Guardar seguimiento</button></div>`;
     openModal('Observaciones / seguimiento','Independiente del Resultado de la guía. Cada actualización queda en el historial.',html,'follow-modal');
+    // Corregir el número de GR (guía de remisión remitente de Roche), con motivo obligatorio.
+    const grHist=(r.grHistory||[]).slice().reverse();
+    const grBox=document.createElement('div'); grBox.className='gr-edit-box';
+    grBox.innerHTML=`<button type="button" class="btn" id="grEditToggle">✎ Corregir número de GR (guía remitente)</button>
+      <div id="grEditForm" class="gr-edit-form hidden">
+        <div class="form-grid"><div class="field"><label>GR actual</label><input value="${esc(r.gr)}" readonly></div>
+        <div class="field"><label>GR correcta</label><input id="grNew" placeholder="Ej. T006-00108833" autocomplete="off"></div>
+        <div class="field span2"><label>Motivo del cambio (obligatorio)</label><textarea id="grReason" rows="2" placeholder="Ej. Roche reemplazó la guía; error de digitación en la data; guía anulada y reemitida…"></textarea></div></div>
+        <div class="gr-edit-actions"><button type="button" class="btn" id="grEditCancel">Cancelar</button><button type="button" class="btn primary" id="grEditSave">GUARDAR CAMBIO DE GR</button></div>
+      </div>
+      ${grHist.length?`<div class="grt-history"><h4>Historial de GR</h4>${grHist.map(x=>`<div><b>${esc(x.oldGR)} → ${esc(x.newGR)}</b><span>${new Date(x.at).toLocaleString('es-PE')} · ${esc(x.user||'—')} · ${esc(x.reason||'')}</span></div>`).join('')}</div>`:''}`;
+    $('#modalBody').insertBefore(grBox,$('.follow-form',$('#modalBody')));
+    $('#grEditToggle').onclick=()=>{ $('#grEditForm').classList.toggle('hidden'); $('#grNew').focus(); };
+    $('#grEditCancel').onclick=()=>$('#grEditForm').classList.add('hidden');
+    $('#grEditSave').onclick=()=>{
+      const raw=$('#grNew').value.trim(), reason=$('#grReason').value.trim();
+      const newGR=normalizeGR(raw);
+      if(!raw){ toast('Escribe la GR correcta',true); $('#grNew').focus(); return; }
+      if(!/^(DEV-)?(T\d{3}|EG\d{2})-\d{8}$/.test(newGR)){ toast(`“${raw}” no parece una GR válida (ej. T006-00108833)`,true); $('#grNew').focus(); return; }
+      if(newGR===normalizeGR(r.gr)){ toast('Es la misma GR que ya tiene',true); return; }
+      if(reason.length<5){ toast('Escribe el motivo del cambio',true); $('#grReason').focus(); return; }
+      const other=[...state.records,...state.review].find(x=>x!==r && normalizeGR(x.gr)===newGR);
+      if(other){ toast(`Ya existe otra guía con ${newGR} (GRT ${other.grt||'—'}). Revisa antes de cambiar.`,true); return; }
+      if(!confirm(`¿Cambiar la GR ${r.gr} por ${newGR}?\n\nMotivo: ${reason}`)) return;
+      const old=r.gr;
+      r.grHistory=r.grHistory||[]; r.grHistory.push({at:nowIso(),user:state.currentUser,oldGR:old,newGR,reason});
+      r.gr=newGR;
+      r.audit=r.audit||[]; r.audit.push({at:nowIso(),user:state.currentUser,action:'Cambio de GR',detail:`${old} → ${newGR} · ${reason}`});
+      saveState(); audit('Cambio de GR',`${old} → ${newGR} · ${reason}`); closeModal(); renderAll(); toast(`GR cambiada: ${old} → ${newGR}`);
+    };
     $('#followCancel').onclick=closeModal; $('#followSave').onclick=()=>{
       const situation=$('#followSituation').value.trim(), note=$('#followNote').value.trim();
       if(!situation && !note){toast('Escribe una situación o una observación',true);return;}
@@ -947,10 +977,12 @@
     const follow=(r.followUps||[]).slice().reverse();
     const followHtml=follow.length?`<div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Situación</th><th>Observación</th><th>Usuario</th></tr></thead><tbody>${follow.map(x=>`<tr><td>${new Date(x.at).toLocaleString('es-PE')}</td><td>${esc(x.situation||'—')}</td><td>${esc(x.note||'—')}</td><td>${esc(x.user||'—')}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty-hint">Sin observaciones registradas en el sistema nuevo.</div>';
     const gh=(r.grtHistory||[]).slice().reverse();
+    const grh=(r.grHistory||[]).slice().reverse();
+    const grHistHtml=grh.length?`<div class="grt-history"><h4>Historial de GR</h4>${grh.map(x=>`<div><b>${esc(x.oldGR)} → ${esc(x.newGR)}</b><span>${new Date(x.at).toLocaleString('es-PE')} · ${esc(x.user||'—')} · ${esc(x.reason||'')}</span></div>`).join('')}</div>`:'';
     const grtHist=gh.length?`<div class="grt-history"><h4>Historial de GRT</h4>${gh.map(x=>`<div><b>${esc(x.oldGRT||'—')} → ${esc(x.newGRT||r.grt)}</b><span>${x.at?new Date(x.at).toLocaleString('es-PE'):'Migración inicial'} · ${esc(x.user||'—')} · ${esc(x.reason||'')}</span></div>`).join('')}</div>`:'';
     const reg=getRegularizationForRecord(r); const closeInfo=reg?`<div class="callout regularization-callout"><b>Regularización histórica:</b> liquidada con fecha ${fmtDate(reg.date)}${reg.cargo?` · Cargo ${esc(reg.cargo)}`:''}.<br><small>${esc(reg.reason||'—')} · Registrado por ${esc(reg.user||'—')}</small></div>`:(r.closeReason?`<div class="callout">Liquidación directa: ${esc(r.closeReason)}</div>`:'');
     const html=`${baseInfo(r)}<div class="detail-kpis"><div><span>Tipo</span><b>${esc(r.type||'Sin tipificar')}</b></div><div><span>Resultado</span><b>${esc(r.result)}</b></div><div><span>Docs por enviar</span><b>${hasUnsent(r)?'Sí':'No'}</b></div><div><span>Documentación acumulada</span><b>${esc(docsText(r,false))}</b></div></div>${sharedGRTDetail(r)}${grtHist}${closeInfo}<h4>Historial de recepciones</h4><div class="table-wrap"><table><thead><tr><th>Fecha/hora</th><th>Usuario</th><th>Documentos</th><th>Envío</th><th>Acción</th></tr></thead><tbody>${receipts||'<tr><td colspan="5">Sin recepciones</td></tr>'}</tbody></table></div><div class="detail-section-head"><h4>Observaciones / seguimiento</h4><button class="btn small" id="detailAddFollow">Actualizar seguimiento</button></div>${followHtml}`;
-    openModal('Detalle de guía','Puedes anular una recepción no enviada si se registró por error. Las recepciones ya reportadas conservan su trazabilidad.',html,'detail-modal');
+    openModal('Detalle de guía','Puedes anular una recepción no enviada si se registró por error. Las recepciones ya reportadas conservan su trazabilidad.',html+grHistHtml,'detail-modal');
     $('#detailAddFollow').onclick=()=>{ closeModal(); openFollowUp(r); };
     $$('[data-annul-receipt]',$('#modalBody')).forEach(b=>b.onclick=()=>annulReceipt(r,b.dataset.annulReceipt));
   }
@@ -1515,6 +1547,7 @@
       });
 
       const existingMap=new Map(); [...state.records,...state.review].forEach(r=>existingMap.set(normalizeGR(r.gr),r));
+      [...state.records,...state.review].forEach(r=>(r.grHistory||[]).forEach(h=>{ const g=normalizeGR(h.oldGR); if(g && !existingMap.has(g)) existingMap.set(g,r); })); // GR corregidas
       const cutoff=$('#importFromDate').value||'';
       const correct=[], review=[], existing=[], changes=[], skippedHistorical=[];
       latestByGR.forEach(t=>{
@@ -1649,7 +1682,7 @@
   // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
   // y se abre una ventana por lote para marcar lo que llegó físicamente.
   const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
-  const APP_VERSION='2.2.23';
+  const APP_VERSION='2.2.25';
   let scanCloud={state:'idle',at:'',msg:''}; // estado de la ruma en Supabase, visible en pantalla
   const SCAN_MAX_PARALLEL=2;   // consultas a la vez (no saturar a SUNAT)
   const SCAN_AUTO_RETRIES=2;   // reintentos automáticos si SUNAT no responde
@@ -1900,18 +1933,68 @@
     }
     const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d',{willReadFrequently:true});
     return async video=>{
-      const w=video.videoWidth, h=video.videoHeight; if(!w||!h) return [];
+      const w=video.videoWidth||video.width, h=video.videoHeight||video.height; if(!w||!h) return [];
       canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h);
       const res=await window.ZXingWASM.readBarcodes(ctx.getImageData(0,0,w,h),{formats:['QRCode'],tryHarder:false,maxNumberOfSymbols:1});
       return res.filter(x=>x.isValid!==false).map(x=>x.text);
     };
   }
+  // Ajustes de cámara por celular (se recuerdan): cámara elegida y zoom.
+  let camPrefs=lsGet('roche_cam_prefs',{deviceId:'',zoom:2});
+  let camInfo={hwZoom:false,min:1,max:1,torch:false,torchOn:false,backCams:[]};
+  const saveCamPrefs=()=>lsSet('roche_cam_prefs',camPrefs);
+  function camTrack(){ return scanStream?.getVideoTracks?.()[0]||null; }
+  async function applyCamSettings(){
+    const track=camTrack(); if(!track) return;
+    const caps=track.getCapabilities?track.getCapabilities():{};
+    camInfo.hwZoom=!!caps.zoom; camInfo.min=caps.zoom?.min||1; camInfo.max=caps.zoom?.max||1; camInfo.torch=!!caps.torch;
+    const adv={};
+    if(Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) adv.focusMode='continuous';
+    if(camInfo.hwZoom) adv.zoom=Math.max(camInfo.min,Math.min(camInfo.max,camPrefs.zoom||1));
+    if(Object.keys(adv).length){ try{ await track.applyConstraints({advanced:[adv]}); }catch(e){ console.warn('Ajustes de cámara',e); } }
+    renderCamControls();
+  }
+  // Zoom digital: si el celular no permite zoom real, se agranda en pantalla y el lector mira el centro ampliado.
+  function digitalZoom(){ return camInfo.hwZoom?1:Math.max(1,camPrefs.zoom||1); }
+  function renderCamControls(){
+    const box=$('#scanCamControls'); if(!box) return;
+    const z=camPrefs.zoom||1;
+    const zooms=[1,2,3].filter(x=>!camInfo.hwZoom || x<=Math.max(1,camInfo.max));
+    box.innerHTML=`<div class="cam-zoom">${zooms.map(x=>`<button type="button" class="cam-btn ${x===z?'selected':''}" data-zoom="${x}">${x}x</button>`).join('')}</div>
+      ${camInfo.backCams.length>1?`<button type="button" class="cam-btn" id="camSwitch">⟳ Cambiar cámara (${Math.max(1,camInfo.backCams.findIndex(d=>d.deviceId===camPrefs.deviceId)+1)}/${camInfo.backCams.length})</button>`:''}
+      ${camInfo.torch?`<button type="button" class="cam-btn ${camInfo.torchOn?'selected':''}" id="camTorch">💡 Linterna</button>`:''}
+      <span class="cam-note">${camInfo.hwZoom?'Zoom de la cámara':'Zoom digital'}</span>`;
+    $$('[data-zoom]',box).forEach(b=>b.onclick=async()=>{ camPrefs.zoom=Number(b.dataset.zoom); saveCamPrefs(); await applyCamSettings(); applyPreviewZoom(); });
+    $('#camSwitch')?.addEventListener('click',switchCamera);
+    $('#camTorch')?.addEventListener('click',async()=>{ camInfo.torchOn=!camInfo.torchOn; try{ await camTrack().applyConstraints({advanced:[{torch:camInfo.torchOn}]}); }catch(e){} renderCamControls(); });
+  }
+  function applyPreviewZoom(){ const v=$('#scanVideo'); if(v) v.style.transform=digitalZoom()>1?`scale(${digitalZoom()})`:''; }
+  async function listBackCameras(){
+    try{
+      const all=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+      const back=all.filter(d=>/back|rear|trasera|environment/i.test(d.label));
+      camInfo.backCams=back.length?back:all;
+    }catch(e){ camInfo.backCams=[]; }
+  }
+  async function switchCamera(){
+    if(camInfo.backCams.length<2) return;
+    const i=camInfo.backCams.findIndex(d=>d.deviceId===camPrefs.deviceId);
+    camPrefs.deviceId=camInfo.backCams[(i+1)%camInfo.backCams.length].deviceId; saveCamPrefs();
+    stopScanCamera(); await startScanCamera();
+    scanCameraMsg('Cámara cambiada: si ahora se ve mejor, quedará guardada');
+  }
   async function startScanCamera(){
     if(scanStream) return;
     if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite usar la cámara (se necesita HTTPS)',true); return; }
     try{
-      scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},audio:false});
+      const base={width:{ideal:1920},height:{ideal:1080}};
+      const video=camPrefs.deviceId?{...base,deviceId:{exact:camPrefs.deviceId}}:{...base,facingMode:{ideal:'environment'}};
+      try{ scanStream=await navigator.mediaDevices.getUserMedia({video,audio:false}); }
+      catch(e){ if(!camPrefs.deviceId) throw e; camPrefs.deviceId=''; saveCamPrefs(); scanStream=await navigator.mediaDevices.getUserMedia({video:{...base,facingMode:{ideal:'environment'}},audio:false}); }
       const v=$('#scanVideo'); v.srcObject=scanStream; await v.play();
+      await listBackCameras();
+      if(!camPrefs.deviceId){ const id=camTrack()?.getSettings?.().deviceId; if(id) camPrefs.deviceId=id; }
+      await applyCamSettings(); applyPreviewZoom();
       $('#scanCameraBox').classList.remove('hidden'); $('#scanStart').classList.add('hidden'); $('#scanStop').classList.remove('hidden');
       scanCameraMsg('Cargando lector…');
       scanDetector=await getScanDetector();
@@ -1923,15 +2006,28 @@
   function stopScanCamera(){
     clearTimeout(scanLoopTimer); scanLoopTimer=null;
     if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
-    const v=$('#scanVideo'); if(v) v.srcObject=null;
+    const v=$('#scanVideo'); if(v){ v.srcObject=null; v.style.transform=''; }
+    camInfo.torchOn=false;
     $('#scanCameraBox')?.classList.add('hidden'); $('#scanStart')?.classList.remove('hidden'); $('#scanStop')?.classList.add('hidden');
+  }
+  let scanCropTurn=false; const cropCanvas=document.createElement('canvas'); const cropCtx=cropCanvas.getContext('2d',{willReadFrequently:true});
+  function centerCrop(video){
+    const w=video.videoWidth, h=video.videoHeight; if(!w||!h) return video;
+    const f=Math.max(2,digitalZoom()); // ampliar al menos 2x
+    const cw=Math.round(w/f), ch=Math.round(h/f), sx=Math.round((w-cw)/2), sy=Math.round((h-ch)/2);
+    cropCanvas.width=cw*2; cropCanvas.height=ch*2; cropCtx.imageSmoothingEnabled=false;
+    cropCtx.drawImage(video,sx,sy,cw,ch,0,0,cw*2,ch*2);
+    return cropCanvas;
   }
   async function scanLoop(){
     if(!scanStream) return;
     if(!scanBusy && scanDetector){
       scanBusy=true;
       try{
-        const values=await scanDetector($('#scanVideo'));
+        let values=await scanDetector($('#scanVideo'));
+        // Si no vio nada, intenta con el centro de la imagen ampliado (QR chico o cámara "lejana").
+        scanCropTurn=!scanCropTurn;
+        if(!values.length && scanCropTurn) values=await scanDetector(centerCrop($('#scanVideo')));
         const hash=values.map(scanHashFrom).find(Boolean);
         const now=Date.now();
         if(hash){
