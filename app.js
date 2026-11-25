@@ -55,7 +55,7 @@
     const records = SEED.filter(x => !(x.issues||[]).length).map(blankRecordFromSeed);
     const review = SEED.filter(x => (x.issues||[]).length).map(x => ({...blankRecordFromSeed(x), imported:false, reviewResolved:false}));
     return {
-      version:'2.2.23-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
+      version:'2.2.24-web', currentUser:'', records, review, rocheOnly:deepClone(ROCHE_ONLY), reports:[], regularizations:[], looseDocs:[],
       grtReceived:{}, grtLedger:{}, reportDraft:null, audit:[], settings:{cargoStart:''}
     };
   }
@@ -75,7 +75,7 @@
   function stateForRemote(){
     const copy=deepClone(state);
     copy.currentUser='';
-    copy.version='2.2.23-web';
+    copy.version='2.2.24-web';
     return copy;
   }
   function setSyncStatus(text,kind=''){
@@ -115,7 +115,7 @@
       const userName=state.currentUser;
       state=data.data;
       state.currentUser=userName;
-      state.version='2.2.23-web';
+      state.version='2.2.24-web';
       lastRemoteUpdatedAt=data.updated_at||'';
       cacheState(); setSyncStatus('● Sincronizado'); return true;
     }
@@ -138,7 +138,7 @@
       // Si mientras descargaba se hizo un cambio local o se abrió un formulario, no se pisa ese trabajo.
       if(remoteSaving || remoteSaveTimer || (!force && !$('#modalBackdrop')?.classList.contains('hidden')))return;
       const userName=state.currentUser;
-      state=data.data; state.currentUser=userName; state.version='2.2.23-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
+      state=data.data; state.currentUser=userName; state.version='2.2.24-web'; lastRemoteUpdatedAt=data.updated_at; cacheState(); renderAll(); setSyncStatus('● Actualizado');
     }catch(err){ console.warn('Supabase refresh',err); }
     finally{ remoteRefreshing=false; }
   }
@@ -340,7 +340,7 @@
     authUser=null; state.currentUser=''; cacheState(); $('#appView').classList.add('hidden'); $('#loginView').classList.remove('hidden'); setSyncStatus('● Desconectado','error');
   });
   $('#backupBtn').addEventListener('click',()=>{
-    const payload={exportedAt:nowIso(),appVersion:'2.2.23-web',state:stateForRemote()};
+    const payload={exportedAt:nowIso(),appVersion:'2.2.24-web',state:stateForRemote()};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}), a=document.createElement('a');
     a.href=URL.createObjectURL(blob); a.download=`ROCHE_RESPALDO_${new Date().toISOString().slice(0,10)}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
     audit('Respaldo exportado'); toast('Respaldo descargado');
@@ -352,7 +352,7 @@
       const parsed=JSON.parse(await file.text()); const restored=parsed.state||parsed;
       if(!restored || !Array.isArray(restored.records) || !Array.isArray(restored.reports)) throw new Error('Formato no válido');
       if(!confirm('¿Restaurar este respaldo en la base compartida? Reemplazará el estado actual para todos los usuarios.'))return;
-      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.23-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
+      const user=state.currentUser; state=restored; state.currentUser=user; state.version='2.2.24-web'; saveState(); await pushRemoteState(); renderAll(); toast('Respaldo restaurado en la base compartida');
     }catch(err){ toast('No pude restaurar ese archivo de respaldo',true); } finally { e.target.value=''; }
   });
   $$('.nav-btn').forEach(b=>b.addEventListener('click',()=>openPage(b.dataset.page)));
@@ -1649,7 +1649,7 @@
   // GR, motivo de traslado y destinatario → al finalizar se arma un lote por cada GRT, en el orden escaneado,
   // y se abre una ventana por lote para marcar lo que llegó físicamente.
   const SCAN_KEY='roche_scan_ruma_v1', QR_CACHE_KEY='roche_qr_cache_v1';
-  const APP_VERSION='2.2.23';
+  const APP_VERSION='2.2.24';
   let scanCloud={state:'idle',at:'',msg:''}; // estado de la ruma en Supabase, visible en pantalla
   const SCAN_MAX_PARALLEL=2;   // consultas a la vez (no saturar a SUNAT)
   const SCAN_AUTO_RETRIES=2;   // reintentos automáticos si SUNAT no responde
@@ -1900,18 +1900,68 @@
     }
     const canvas=document.createElement('canvas'), ctx=canvas.getContext('2d',{willReadFrequently:true});
     return async video=>{
-      const w=video.videoWidth, h=video.videoHeight; if(!w||!h) return [];
+      const w=video.videoWidth||video.width, h=video.videoHeight||video.height; if(!w||!h) return [];
       canvas.width=w; canvas.height=h; ctx.drawImage(video,0,0,w,h);
       const res=await window.ZXingWASM.readBarcodes(ctx.getImageData(0,0,w,h),{formats:['QRCode'],tryHarder:false,maxNumberOfSymbols:1});
       return res.filter(x=>x.isValid!==false).map(x=>x.text);
     };
   }
+  // Ajustes de cámara por celular (se recuerdan): cámara elegida y zoom.
+  let camPrefs=lsGet('roche_cam_prefs',{deviceId:'',zoom:2});
+  let camInfo={hwZoom:false,min:1,max:1,torch:false,torchOn:false,backCams:[]};
+  const saveCamPrefs=()=>lsSet('roche_cam_prefs',camPrefs);
+  function camTrack(){ return scanStream?.getVideoTracks?.()[0]||null; }
+  async function applyCamSettings(){
+    const track=camTrack(); if(!track) return;
+    const caps=track.getCapabilities?track.getCapabilities():{};
+    camInfo.hwZoom=!!caps.zoom; camInfo.min=caps.zoom?.min||1; camInfo.max=caps.zoom?.max||1; camInfo.torch=!!caps.torch;
+    const adv={};
+    if(Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) adv.focusMode='continuous';
+    if(camInfo.hwZoom) adv.zoom=Math.max(camInfo.min,Math.min(camInfo.max,camPrefs.zoom||1));
+    if(Object.keys(adv).length){ try{ await track.applyConstraints({advanced:[adv]}); }catch(e){ console.warn('Ajustes de cámara',e); } }
+    renderCamControls();
+  }
+  // Zoom digital: si el celular no permite zoom real, se agranda en pantalla y el lector mira el centro ampliado.
+  function digitalZoom(){ return camInfo.hwZoom?1:Math.max(1,camPrefs.zoom||1); }
+  function renderCamControls(){
+    const box=$('#scanCamControls'); if(!box) return;
+    const z=camPrefs.zoom||1;
+    const zooms=[1,2,3].filter(x=>!camInfo.hwZoom || x<=Math.max(1,camInfo.max));
+    box.innerHTML=`<div class="cam-zoom">${zooms.map(x=>`<button type="button" class="cam-btn ${x===z?'selected':''}" data-zoom="${x}">${x}x</button>`).join('')}</div>
+      ${camInfo.backCams.length>1?`<button type="button" class="cam-btn" id="camSwitch">⟳ Cambiar cámara (${Math.max(1,camInfo.backCams.findIndex(d=>d.deviceId===camPrefs.deviceId)+1)}/${camInfo.backCams.length})</button>`:''}
+      ${camInfo.torch?`<button type="button" class="cam-btn ${camInfo.torchOn?'selected':''}" id="camTorch">💡 Linterna</button>`:''}
+      <span class="cam-note">${camInfo.hwZoom?'Zoom de la cámara':'Zoom digital'}</span>`;
+    $$('[data-zoom]',box).forEach(b=>b.onclick=async()=>{ camPrefs.zoom=Number(b.dataset.zoom); saveCamPrefs(); await applyCamSettings(); applyPreviewZoom(); });
+    $('#camSwitch')?.addEventListener('click',switchCamera);
+    $('#camTorch')?.addEventListener('click',async()=>{ camInfo.torchOn=!camInfo.torchOn; try{ await camTrack().applyConstraints({advanced:[{torch:camInfo.torchOn}]}); }catch(e){} renderCamControls(); });
+  }
+  function applyPreviewZoom(){ const v=$('#scanVideo'); if(v) v.style.transform=digitalZoom()>1?`scale(${digitalZoom()})`:''; }
+  async function listBackCameras(){
+    try{
+      const all=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==='videoinput');
+      const back=all.filter(d=>/back|rear|trasera|environment/i.test(d.label));
+      camInfo.backCams=back.length?back:all;
+    }catch(e){ camInfo.backCams=[]; }
+  }
+  async function switchCamera(){
+    if(camInfo.backCams.length<2) return;
+    const i=camInfo.backCams.findIndex(d=>d.deviceId===camPrefs.deviceId);
+    camPrefs.deviceId=camInfo.backCams[(i+1)%camInfo.backCams.length].deviceId; saveCamPrefs();
+    stopScanCamera(); await startScanCamera();
+    scanCameraMsg('Cámara cambiada: si ahora se ve mejor, quedará guardada');
+  }
   async function startScanCamera(){
     if(scanStream) return;
     if(!navigator.mediaDevices?.getUserMedia){ toast('Este navegador no permite usar la cámara (se necesita HTTPS)',true); return; }
     try{
-      scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},audio:false});
+      const base={width:{ideal:1920},height:{ideal:1080}};
+      const video=camPrefs.deviceId?{...base,deviceId:{exact:camPrefs.deviceId}}:{...base,facingMode:{ideal:'environment'}};
+      try{ scanStream=await navigator.mediaDevices.getUserMedia({video,audio:false}); }
+      catch(e){ if(!camPrefs.deviceId) throw e; camPrefs.deviceId=''; saveCamPrefs(); scanStream=await navigator.mediaDevices.getUserMedia({video:{...base,facingMode:{ideal:'environment'}},audio:false}); }
       const v=$('#scanVideo'); v.srcObject=scanStream; await v.play();
+      await listBackCameras();
+      if(!camPrefs.deviceId){ const id=camTrack()?.getSettings?.().deviceId; if(id) camPrefs.deviceId=id; }
+      await applyCamSettings(); applyPreviewZoom();
       $('#scanCameraBox').classList.remove('hidden'); $('#scanStart').classList.add('hidden'); $('#scanStop').classList.remove('hidden');
       scanCameraMsg('Cargando lector…');
       scanDetector=await getScanDetector();
@@ -1923,15 +1973,28 @@
   function stopScanCamera(){
     clearTimeout(scanLoopTimer); scanLoopTimer=null;
     if(scanStream){ scanStream.getTracks().forEach(t=>t.stop()); scanStream=null; }
-    const v=$('#scanVideo'); if(v) v.srcObject=null;
+    const v=$('#scanVideo'); if(v){ v.srcObject=null; v.style.transform=''; }
+    camInfo.torchOn=false;
     $('#scanCameraBox')?.classList.add('hidden'); $('#scanStart')?.classList.remove('hidden'); $('#scanStop')?.classList.add('hidden');
+  }
+  let scanCropTurn=false; const cropCanvas=document.createElement('canvas'); const cropCtx=cropCanvas.getContext('2d',{willReadFrequently:true});
+  function centerCrop(video){
+    const w=video.videoWidth, h=video.videoHeight; if(!w||!h) return video;
+    const f=Math.max(2,digitalZoom()); // ampliar al menos 2x
+    const cw=Math.round(w/f), ch=Math.round(h/f), sx=Math.round((w-cw)/2), sy=Math.round((h-ch)/2);
+    cropCanvas.width=cw*2; cropCanvas.height=ch*2; cropCtx.imageSmoothingEnabled=false;
+    cropCtx.drawImage(video,sx,sy,cw,ch,0,0,cw*2,ch*2);
+    return cropCanvas;
   }
   async function scanLoop(){
     if(!scanStream) return;
     if(!scanBusy && scanDetector){
       scanBusy=true;
       try{
-        const values=await scanDetector($('#scanVideo'));
+        let values=await scanDetector($('#scanVideo'));
+        // Si no vio nada, intenta con el centro de la imagen ampliado (QR chico o cámara "lejana").
+        scanCropTurn=!scanCropTurn;
+        if(!values.length && scanCropTurn) values=await scanDetector(centerCrop($('#scanVideo')));
         const hash=values.map(scanHashFrom).find(Boolean);
         const now=Date.now();
         if(hash){
